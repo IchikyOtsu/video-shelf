@@ -1,6 +1,6 @@
 # Shelf
 
-A deliberately calm, multi-format RSS aggregator for articles, videos, podcasts and newsletters.
+A calm YouTube library with embedded playback, live channel search, channel filters, and saved/viewed videos.
 
 ## Database (Vercel + Neon)
 
@@ -22,7 +22,15 @@ npm run db:generate
 npm run db:migrate
 ```
 
-Authentication uses secure HTTP-only session cookies and password hashes. The next feature is a server-side RSS importer that persists sources and items through `src/db`.
+Authentication uses secure HTTP-only session cookies and password hashes. YouTube subscriptions and imported videos are stored in Postgres. Saved/viewed choices are stored per account in the current browser.
+
+## YouTube experience
+
+Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Selecting a result imports the channel’s latest RSS videos. The library displays the 100 most recent imported videos.
+
+Optionally configure `YOUTUBE_API_KEY` with YouTube Data API v3 enabled for channel name search. Without it, the app reads public YouTube search results; YouTube can block these requests or change the page format. If search is unavailable, the dialog suggests a direct handle or channel URL.
+
+Videos play in a YouTube privacy-enhanced embed after a click. Videos whose owners disable embedding can be opened with the YouTube link below the player.
 
 ## Automatic YouTube refresh
 

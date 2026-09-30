@@ -13,14 +13,14 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shelf — votre internet, sans le bruit",
-  description: "Un agrégateur calme pour vos sources choisies.",
+  title: "Shelf — vos vidéos, à votre rythme",
+  description: "Retrouvez vos chaînes YouTube et regardez leurs vidéos dans votre bibliothèque personnelle.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
-      lang="en"
+      lang="fr"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>

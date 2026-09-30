@@ -8,7 +8,7 @@ const list = <T,>(value: T | T[] | undefined) => value ? (Array.isArray(value) ?
 
 export async function syncYouTubeSource(source: YouTubeSource) {
   if (!db) throw new Error("Database not connected");
-  const response = await fetch(source.feedUrl, { next: { revalidate: 0 }, headers: { "user-agent": "Shelf/1.0" } });
+  const response = await fetch(source.feedUrl, { signal: AbortSignal.timeout(10000), next: { revalidate: 0 }, headers: { "user-agent": "Shelf/1.0" } });
   if (!response.ok) throw new Error("Le flux YouTube est inaccessible.");
   const feed = parser.parse(await response.text()).feed;
   const rows = list(feed?.entry).map((entry: Record<string, unknown>) => {
