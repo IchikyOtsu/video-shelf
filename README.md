@@ -23,3 +23,7 @@ npm run db:migrate
 ```
 
 Authentication uses secure HTTP-only session cookies and password hashes. The next feature is a server-side RSS importer that persists sources and items through `src/db`.
+
+## Automatic YouTube refresh
+
+Vercel calls `/api/cron/sync` once per day at 08:00 UTC. Add a `CRON_SECRET` environment variable in Vercel (a different random value from `AUTH_SECRET`). Vercel sends this secret automatically to the Cron route.
