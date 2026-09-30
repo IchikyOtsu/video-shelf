@@ -1,55 +1,18 @@
 "use client";
-
+/* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
-
-type User = { id: string; email: string; name: string | null };
-type Source = { id: string; name: string; feedUrl: string; siteUrl: string | null; category: string; kind: string };
-const categories = ["Tous", "Vidéos"];
-
-export default function Home() {
-  const [user, setUser] = useState<User | null | undefined>(undefined);
-  const [sources, setSources] = useState<Source[]>([]);
-  const [category, setCategory] = useState("Tous");
-  const [open, setOpen] = useState(false);
-  const [error, setError] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    fetch("/api/auth/me").then(r => r.json()).then(({ user }) => {
-      setUser(user);
-      if (user) fetch("/api/sources").then(r => r.json()).then(d => setSources(d.sources || []));
-    }).catch(() => setUser(null));
-  }, []);
-
-  async function signOut() { await fetch("/api/auth/signout", { method: "POST" }); setUser(null); setSources([]); }
-  async function addChannel(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setSaving(true); setError("");
-    const form = new FormData(event.currentTarget);
-    const response = await fetch("/api/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: form.get("name"), feedUrl: form.get("channel"), category: "Vidéos", kind: "youtube" }) });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) { setError(data.error || "Impossible d’ajouter la chaîne."); setSaving(false); return; }
-    setSources(current => [...current, data.source].sort((a, b) => a.name.localeCompare(b.name)));
-    setSaving(false); setOpen(false);
-  }
-
-  if (user === undefined) return <main className="loading">Chargement…</main>;
-  if (!user) return <main className="login-home"><Link href="/" className="brand"><span>◒</span>shelf</Link><section><h1>Vos chaînes.<br />Votre rythme.</h1><p>Un lecteur simple pour les vidéos que vous choisissez.</p><div><Link href="/signup" className="dark-button">Créer un compte</Link><Link href="/signin" className="quiet-button">Se connecter</Link></div></section></main>;
-
-  const shown = category === "Tous" ? sources : sources.filter(source => source.category === category);
-  return <main className="dashboard">
-    <aside className="side">
-      <Link href="/" className="brand"><span>◒</span>shelf</Link>
-      <button className="add-source" onClick={() => setOpen(true)}>＋ Ajouter une chaîne</button>
-      <nav className="main-nav"><button className="nav-active">◷ Boîte de réception</button><button>♡ Enregistrés</button><button>✓ Lus</button></nav>
-      <p className="side-label">CATÉGORIES</p>
-      <nav className="category-nav">{categories.map(item => <button key={item} className={category === item ? "selected" : ""} onClick={() => setCategory(item)}>{item}<small>{item === "Tous" ? sources.length : sources.length || ""}</small></button>)}</nav>
-      <div className="account"><span>{(user.name || user.email)[0].toUpperCase()}</span><div><b>{user.name || user.email.split("@")[0]}</b><button onClick={signOut}>Se déconnecter</button></div></div>
-    </aside>
-    <section className="dashboard-content">
-      <header><div><h1>Boîte de réception</h1><p>{shown.length} chaîne{shown.length !== 1 ? "s" : ""}</p></div><button className="outline-button" onClick={() => setOpen(true)}>Ajouter une chaîne</button></header>
-      {shown.length ? <div className="source-list">{shown.map(source => <article key={source.id} className="source-row"><span className="source-dot">{source.name[0].toUpperCase()}</span><div><h2>{source.name}</h2><p>YOUTUBE · FLUX RSS CONNECTÉ</p></div><a href={source.siteUrl || source.feedUrl} target="_blank" rel="noreferrer">Ouvrir ↗</a></article>)}</div> : <div className="dashboard-empty"><span>▶</span><h2>Aucune chaîne</h2><p>Collez l’URL d’une chaîne YouTube. Shelf trouve son flux RSS automatiquement.</p><button className="dark-button" onClick={() => setOpen(true)}>Ajouter une chaîne</button></div>}
-    </section>
-    {open && <div className="modal-wrap" role="dialog" aria-modal="true"><form className="modal source-form" onSubmit={addChannel}><button className="close" type="button" onClick={() => setOpen(false)}>×</button><h2>Ajouter une chaîne YouTube</h2><p>Collez l’URL de la chaîne ou son handle. Le nom et le flux RSS sont trouvés automatiquement.</p><label>URL ou handle YouTube<input name="channel" placeholder="https://youtube.com/@veritasium ou @veritasium" required /></label><label>Nom <small>(facultatif)</small><input name="name" placeholder="Laisser vide pour détecter le nom" /></label>{error && <p className="form-error">{error}</p>}<button className="dark-button" disabled={saving}>{saving ? "Recherche du flux…" : "Ajouter la chaîne"}</button></form></div>}
-  </main>;
+type User={id:string;email:string;name:string|null}; type Source={id:string;name:string;feedUrl:string;siteUrl:string|null}; type Video={id:string;title:string;url:string;imageUrl:string|null;publishedAt:string|null;sourceName:string}; type Preview={name:string;channelId:string};
+export default function Home(){
+ const[user,setUser]=useState<User|null|undefined>(undefined),[sources,setSources]=useState<Source[]>([]),[videos,setVideos]=useState<Video[]>([]),[open,setOpen]=useState(false),[error,setError]=useState(""),[saving,setSaving]=useState(false),[channel,setChannel]=useState(""),[preview,setPreview]=useState<Preview|null>(null),[checking,setChecking]=useState(false),[refreshing,setRefreshing]=useState(false);
+ async function load(){const[s,v]=await Promise.all([fetch("/api/sources").then(r=>r.json()),fetch("/api/videos").then(r=>r.json())]);setSources(s.sources||[]);setVideos(v.videos||[])}
+ useEffect(()=>{fetch("/api/auth/me").then(r=>r.json()).then(async({user})=>{if(user)await load();setUser(user)}).catch(()=>setUser(null))},[]);
+ useEffect(()=>{if(!open||channel.trim().length<3)return;const t=setTimeout(async()=>{setChecking(true);const r=await fetch(`/api/youtube/resolve?input=${encodeURIComponent(channel)}`),d=await r.json().catch(()=>({}));setPreview(r.ok?d:null);setChecking(false)},600);return()=>clearTimeout(t)},[channel,open]);
+ async function signOut(){await fetch("/api/auth/signout",{method:"POST"});setUser(null);setSources([]);setVideos([])}
+ async function addChannel(e:FormEvent){e.preventDefault();setSaving(true);setError("");const r=await fetch("/api/sources",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({feedUrl:channel,kind:"youtube",category:"Vidéos"})}),d=await r.json().catch(()=>({}));if(!r.ok){setError(d.error||"Impossible d’ajouter la chaîne.");setSaving(false);return}await load();setSaving(false);setOpen(false);setChannel("");setPreview(null)}
+ async function remove(id:string){if(!confirm("Supprimer cette chaîne et ses vidéos ?"))return;await fetch(`/api/sources/${id}`,{method:"DELETE"});await load()}
+ async function refresh(){setRefreshing(true);await Promise.all(sources.map(s=>fetch(`/api/sources/${s.id}/sync`,{method:"POST"})));await load();setRefreshing(false)}
+ if(user===undefined)return <main className="loading">Chargement…</main>;
+ if(!user)return <main className="login-home"><Link href="/" className="brand"><span>◒</span>shelf</Link><section><h1>Vos chaînes.<br/>Votre rythme.</h1><p>Un lecteur simple pour les vidéos que vous choisissez.</p><div><Link href="/signup" className="dark-button">Créer un compte</Link><Link href="/signin" className="quiet-button">Se connecter</Link></div></section></main>;
+ return <main className="dashboard"><aside className="side"><Link href="/" className="brand"><span>◒</span>shelf</Link><button className="add-source" onClick={()=>setOpen(true)}>＋ Ajouter une chaîne</button><nav className="main-nav"><button className="nav-active">◷ Boîte de réception <small>{videos.length}</small></button><button>♡ Enregistrés</button><button>✓ Lus</button></nav><p className="side-label">CHAÎNES</p><nav className="channel-nav">{sources.length?sources.map(s=><div key={s.id}><a href={s.siteUrl||s.feedUrl} target="_blank" rel="noreferrer"><span>{s.name[0].toUpperCase()}</span>{s.name}</a><button title="Supprimer" onClick={()=>remove(s.id)}>×</button></div>):<p>Aucune chaîne</p>}</nav><div className="account"><span>{(user.name||user.email)[0].toUpperCase()}</span><div><b>{user.name||user.email.split("@")[0]}</b><button onClick={signOut}>Se déconnecter</button></div></div></aside><section className="dashboard-content"><header><div><h1>Vidéos récentes</h1><p>{videos.length} vidéo{videos.length!==1?"s":""}</p></div><button className="outline-button" disabled={refreshing} onClick={refresh}>{refreshing?"Actualisation…":"Actualiser"}</button></header>{videos.length?<div className="video-grid">{videos.map(v=><article className="video-card" key={v.id}><a href={v.url} target="_blank" rel="noreferrer" className="video-thumb">{v.imageUrl?<img src={v.imageUrl} alt=""/>:<span>▶</span>}</a><p>{v.sourceName}</p><h2><a href={v.url} target="_blank" rel="noreferrer">{v.title}</a></h2><time>{v.publishedAt?new Intl.DateTimeFormat("fr-BE",{dateStyle:"medium"}).format(new Date(v.publishedAt)):""}</time></article>)}</div>:<div className="dashboard-empty"><span>▶</span><h2>Aucune vidéo</h2><p>Ajoute une chaîne YouTube. Ses dernières vidéos apparaîtront ici.</p><button className="dark-button" onClick={()=>setOpen(true)}>Ajouter une chaîne</button></div>}</section>{open&&<div className="modal-wrap" role="dialog" aria-modal="true"><form className="modal source-form" onSubmit={addChannel}><button className="close" type="button" onClick={()=>setOpen(false)}>×</button><h2>Ajouter une chaîne</h2><p>Colle une URL YouTube ou un handle. Le flux est trouvé automatiquement.</p><label>Chaîne YouTube<input value={channel} onChange={e=>{setChannel(e.target.value);setPreview(null)}} placeholder="@veritasium ou youtube.com/@veritasium" required autoFocus/></label>{checking&&<p className="lookup">Recherche de la chaîne…</p>}{preview&&<div className="channel-preview"><span>{preview.name?.[0]?.toUpperCase()||"▶"}</span><div><b>{preview.name}</b><small>Chaîne trouvée · flux RSS prêt</small></div></div>}{error&&<p className="form-error">{error}</p>}<button className="dark-button" disabled={saving||!preview}>{saving?"Ajout…":"Ajouter la chaîne"}</button></form></div>}</main>
 }

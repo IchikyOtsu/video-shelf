@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "items_source_guid_unique" ON "items" USING btree ("source_id","guid");

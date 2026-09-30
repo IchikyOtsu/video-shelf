@@ -15,6 +15,13 @@
       "when": 1790762699910,
       "tag": "0001_dry_tyger_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790764396607,
+      "tag": "0002_redundant_logan",
+      "breakpoints": true
     }
   ]
 }
