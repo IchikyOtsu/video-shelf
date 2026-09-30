@@ -36,6 +36,20 @@ yarn-error.log*
 # vercel
 .vercel
 
+# AI coding-agent local state and generated workspace files
+.codex/
+.agents/
+.agent/
+.claude/
+.cursor/
+.aider/
+.continue/
+.roo/
+.windsurf/
+.copilot/
+AGENTS.local.md
+CLAUDE.local.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
