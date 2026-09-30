@@ -1,69 +1,18 @@
-import Image from "next/image";
+"use client";
+
+import { FormEvent, useEffect, useMemo, useState } from "react";
+
+type Channel = { name: string; handle: string; color: string; unread: number };
+type Video = { id: number; title: string; channel: string; time: string; length: string; topic: string; color: string; saved?: boolean; watched?: boolean };
+const starterChannels: Channel[] = [{ name:"Fireship", handle:"@fireship", color:"#e8784b", unread:4 },{ name:"Kurzgesagt", handle:"@kurzgesagt", color:"#3d74d5", unread:2 },{ name:"MKBHD", handle:"@mkbhd", color:"#232e61", unread:1 }];
+const starterVideos: Video[] = [{ id:1,title:"The tiny change that makes code feel fast",channel:"Fireship",time:"2 hours ago",length:"8:24",topic:"Development",color:"coral"},{id:2,title:"Why your brain loves a good question",channel:"Kurzgesagt",time:"Yesterday",length:"12:11",topic:"Science",color:"blue"},{id:3,title:"A calmer way to use your phone",channel:"MKBHD",time:"Yesterday",length:"14:38",topic:"Technology",color:"ink"},{id:4,title:"The best simple meals I learned this year",channel:"Pick Up Limes",time:"3 days ago",length:"18:02",topic:"Food",color:"lime"}];
 
 export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+  const stored = () => { if (typeof window === "undefined") return { channels: starterChannels, videos: starterVideos }; try { return JSON.parse(localStorage.getItem("video-shelf-state") || "null") || { channels: starterChannels, videos: starterVideos }; } catch { return { channels: starterChannels, videos: starterVideos }; } };
+  const [channels, setChannels] = useState<Channel[]>(() => stored().channels ?? starterChannels), [videos, setVideos] = useState<Video[]>(() => stored().videos ?? starterVideos), [query, setQuery] = useState(""), [tab, setTab] = useState("Inbox"), [category, setCategory] = useState("All"), [showAdd, setShowAdd] = useState(false), [feedUrl, setFeedUrl] = useState("");
+  useEffect(() => localStorage.setItem("video-shelf-state", JSON.stringify({channels,videos})), [channels,videos]);
+  const filtered = useMemo(() => videos.filter(v => `${v.title} ${v.channel}`.toLowerCase().includes(query.toLowerCase()) && (category === "All" || v.topic === category) && (tab === "Saved" ? v.saved : tab === "Watched" ? v.watched : !v.watched)), [videos,query,tab,category]);
+  function addFeed(e: FormEvent) { e.preventDefault(); if(!feedUrl.trim()) return; const n = feedUrl.trim().replace(/^https?:\/\/(www\.)?/,"").split(/[/.]/)[0].replace(/[-_]/g," "); setChannels(c => [...c,{name:n.slice(0,1).toUpperCase()+n.slice(1),handle:"RSS feed",color:"#8973dc",unread:0}]); setFeedUrl("");setShowAdd(false); }
+  function updateVideo(id:number, field:"saved"|"watched") { setVideos(v => v.map(x => x.id===id ? {...x,[field]:!x[field]} : x)); }
+  return <main className="shell"><aside className="sidebar"><a className="brand" href="#top"><span className="brand-mark">◒</span>shelf</a><button className="add-button" onClick={()=>setShowAdd(true)}><span>+</span>Add a source</button><nav className="nav" aria-label="Library">{["Inbox","Saved","Watched"].map(item=><button key={item} className={tab===item?"active":""} onClick={()=>setTab(item)}><span>{item==="Inbox"?"⌂":item==="Saved"?"♧":"◷"}</span>{item}</button>)}</nav><div className="channel-title">YOUR SOURCES <button onClick={()=>setShowAdd(true)}>+</button></div><div className="channels">{channels.map(c=><button key={`${c.name}-${c.handle}`} className="channel"><span className="avatar" style={{background:c.color}}>{c.name[0]}</span><span className="channel-name">{c.name}<small>{c.handle}</small></span>{c.unread>0&&<b>{c.unread}</b>}</button>)}</div><div className="sidebar-foot"><span>⦿</span>Your library lives here</div></aside><section className="content" id="top"><header><div><p className="eyebrow">A QUIET CORNER OF THE INTERNET</p><h1>Good to see you.</h1><p className="subhead">Articles, podcasts, newsletters and videos — without the attention traps.</p></div><button className="profile">I</button></header><div className="toolbar"><div className="tabs">{["Inbox","Saved","Watched"].map(i=><button key={i} className={tab===i?"selected":""} onClick={()=>setTab(i)}>{i}</button>)}</div><label className="search"><span>⌕</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search your shelf" /></label></div><div className="categories">{["All","Development","Science","Technology","Food","Design","Culture","News","Podcasts","Newsletters"].map(item=><button key={item} className={category===item?"category-selected":""} onClick={()=>setCategory(item)}>{item}</button>)}</div><div className="status"><span className="spark">✦</span><span>{tab==="Inbox"?"7 new things since your last visit":`${filtered.length} items in ${tab.toLowerCase()}`}</span><button onClick={()=>setVideos(i=>i.map(v=>({...v,watched:true})))}>Mark all as read</button></div><div className="feed">{filtered.map(v=><article className={`video ${v.watched?"seen":""}`} key={v.id}><div className={`thumb ${v.color}`}><span className="play">▶</span><em>{v.length}</em></div><div className="video-copy"><div className="meta"><span>{v.topic}</span><i>•</i>{v.time}</div><h2>{v.title}</h2><p>{v.channel}</p></div><div className="actions"><button title="Save item" onClick={()=>updateVideo(v.id,"saved")}>{v.saved?"♥":"♡"}</button><button title="Mark read" onClick={()=>updateVideo(v.id,"watched")}>{v.watched?"↶":"✓"}</button><button title="More options">•••</button></div></article>)}{filtered.length===0&&<div className="empty">Nothing here yet. Let your attention rest.</div>}</div></section>{showAdd&&<div className="modal-wrap" role="dialog" aria-modal="true"><form className="modal" onSubmit={addFeed}><button type="button" className="close" onClick={()=>setShowAdd(false)}>×</button><span className="modal-icon">◒</span><h2>Add a source</h2><p>Paste an RSS, Atom, newsletter, podcast or YouTube channel URL. Your subscriptions stay in this browser until the database is linked.</p><input autoFocus value={feedUrl} onChange={e=>setFeedUrl(e.target.value)} placeholder="https://…"/><button className="submit" type="submit">Add to my shelf</button></form></div>}</main>;
 }
