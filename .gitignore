@@ -49,6 +49,8 @@ yarn-error.log*
 .copilot/
 AGENTS.local.md
 CLAUDE.local.md
+AGENTS.md
+CLAUDE.md
 
 # typescript
 *.tsbuildinfo
