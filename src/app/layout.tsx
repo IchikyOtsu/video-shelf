@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shelf — vos vidéos, à votre rythme",
-  description: "Retrouvez vos chaînes YouTube et regardez leurs vidéos dans votre bibliothèque personnelle.",
+  title: "Shelf — vos flux, à votre rythme",
+  description: "Un agrégateur pour suivre vos sources, découvrir leurs nouveautés et retrouver vos contenus dans votre bibliothèque.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
