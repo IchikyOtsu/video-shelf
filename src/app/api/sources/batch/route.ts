@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     const inserted = fresh.length ? await db.insert(sources).values(fresh.map(source => ({ userId: user.id, name: source.name, feedUrl: source.feedUrl, siteUrl: source.siteUrl, kind: source.kind, contentType: source.contentType, category: "Non classé" }))).onConflictDoNothing().returning() : [];
     const insertedFeeds = new Set(inserted.map(source => source.feedUrl));
     const alreadyExisting = candidates.filter(source => existingFeeds.has(source.feedUrl) || !insertedFeeds.has(source.feedUrl)).map(source => ({ channelId: source.channelId, name: source.name }));
-    const synced = await syncBatchSources(inserted, syncSource);
+    const synced = await syncBatchSources(inserted, source => syncSource(source, { initialImport: true }));
     return NextResponse.json({ added: synced.added, alreadyExisting, failed: [...validationFailures, ...synced.failed], imported: synced.imported }, { status: inserted.length ? 201 : 200 });
   } catch {
     return NextResponse.json({ error: "Les sources n’ont pas pu être ajoutées." }, { status: 503 });

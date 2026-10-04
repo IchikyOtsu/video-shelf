@@ -1,12 +1,25 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deduplicateNormalizedItems, getSourceProvider, runSourceSync, type NormalizedItem } from "./sources";
+import { deduplicateNormalizedItems, getSourceProvider, initialImportStates, runSourceSync, type NormalizedItem } from "./sources";
 
-const source = { id: "11111111-1111-4111-8111-111111111111", kind: "youtube", feedUrl: "https://example.com/feed" };
+const source = { id: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222", kind: "youtube", feedUrl: "https://example.com/feed" };
 const item: NormalizedItem = { guid: "video-1", title: "One", url: "https://example.com/one", mediaType: "video" };
 
 test("provider normalization does not persist duplicate source GUIDs", () => {
   assert.deepEqual(deduplicateNormalizedItems([item, { ...item, title: "Duplicate" }]), [item]);
+});
+
+test("initial source import creates seen states while preserving items for Library and source history", () => {
+  const states = initialImportStates(source.userId, ["item-1", "item-2"], true);
+  assert.deepEqual(states, [
+    { userId: source.userId, itemId: "item-1", read: true },
+    { userId: source.userId, itemId: "item-2", read: true },
+  ]);
+  assert.equal(states.every(state => state.read), true);
+});
+
+test("later sync items remain unseen and existing source sync behavior is unchanged", () => {
+  assert.deepEqual(initialImportStates(source.userId, ["new-item"], false), []);
 });
 
 test("a successful sync persists normalized items, records success and clears the error path", async () => {

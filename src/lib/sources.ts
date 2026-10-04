@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { items, sources } from "@/db/schema";
+import { itemStates, items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
 import type { ContentType } from "./library";
 
-export type SourceSyncInput = { id: string; kind: string; feedUrl: string };
+export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
 export type NormalizedItem = {
   guid: string;
   title: string;
@@ -34,6 +34,10 @@ export function shortSyncError(error: unknown) {
   return message.replace(/\s+/g, " ").trim().slice(0, 240) || "Actualisation impossible.";
 }
 
+export function initialImportStates(userId: string, itemIds: string[], initialImport: boolean) {
+  return initialImport ? itemIds.map(itemId => ({ userId, itemId, read: true })) : [];
+}
+
 export async function runSourceSync(
   source: SourceSyncInput,
   provider: SourceProvider,
@@ -57,7 +61,7 @@ export function getSourceProvider(kind: string) {
   return providers[kind];
 }
 
-export async function syncSource(source: SourceSyncInput) {
+export async function syncSource(source: SourceSyncInput, { initialImport = false }: { initialImport?: boolean } = {}) {
   if (!db) throw new Error("Database not connected");
   const database = db;
   const provider = getSourceProvider(source.kind);
@@ -68,6 +72,9 @@ export async function syncSource(source: SourceSyncInput) {
     async normalized => {
       if (!normalized.length) return 0;
       const inserted = await database.insert(items).values(normalized.map(item => ({ sourceId: source.id, ...item }))).onConflictDoNothing().returning({ id: items.id });
+      if (initialImport && !source.userId) throw new Error("Initial source import requires an owner.");
+      const states = initialImportStates(source.userId || "", inserted.map(item => item.id), initialImport);
+      if (states.length) await database.insert(itemStates).values(states);
       return inserted.length;
     },
     async () => { await database.update(sources).set({ lastSyncedAt: new Date(), lastSyncError: null }).where(eq(sources.id, source.id)); },
