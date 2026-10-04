@@ -78,6 +78,7 @@ export default function Home() {
   const [sourceRevision, setSourceRevision] = useState(0);
   const [playing, setPlaying] = useState<FeedItem | null>(null);
   const [completionSuppressedId, setCompletionSuppressedId] = useState<string | null>(null);
+  const [cleaningShorts, setCleaningShorts] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const player = useRef<HTMLElement>(null);
   const generation = useRef(0);
@@ -225,6 +226,16 @@ export default function Home() {
     try { await request("/api/auth/signout", { method: "POST" }); setUser(null); setSources([]); setPage(emptyPage); setPlaying(null); }
     catch (e) { setError((e as Error).message); }
   }
+  async function removeShorts() {
+    if (cleaningShorts || !confirm("Retirer définitivement tous les Shorts déjà importés ? Les vidéos normales, tes sources et tes autres contenus restent inchangés.")) return;
+    setCleaningShorts(true); setError("");
+    try {
+      const result = await request("/api/items/shorts", { method: "DELETE" });
+      setNotice(result.removed ? result.removed + " Short(s) retiré(s)." : "Aucun Short importé à retirer.");
+      closePlayer(); setSelected(new Set()); setFeedRevision(value => value + 1);
+    } catch (error) { setError((error as Error).message); }
+    finally { setCleaningShorts(false); }
+  }
   if (user === undefined) return <main className="loading">Ouverture de tes flux…</main>;
   if (!user && error) return <main className="login-home"><Link href="/" className="brand"><span>◒</span>shelf</Link><section><p role="alert" className="form-error">{error}</p><button className="outline-button" onClick={() => { setError(""); setUser(undefined); setAccountRevision(value => value + 1); }}>Réessayer</button></section></main>;
   if (!user) return <main className="login-home"><Link href="/" className="brand"><span>◒</span>shelf</Link>{error && <p role="alert" className="form-error">{error}</p>}<section><p className="eyebrow">TES SOURCES. TON ESPACE.</p><h1>Tout suivre.<br />À ton rythme.</h1><p>Un agrégateur pour rassembler tes sources, découvrir leurs nouveautés et garder ce qui compte. Commence avec tes flux de vidéos.</p><div><Link href="/signup" className="dark-button">Créer un compte</Link><Link href="/signin" className="quiet-button">Se connecter</Link></div></section></main>;
@@ -257,7 +268,7 @@ export default function Home() {
         {playerId ? <YouTubePlayer key={playing.id} itemId={playing.id} videoId={playerId} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : <p className="player-fallback">Cette vidéo ne peut pas être intégrée. Ouvre-la sur le site de la source.</p>}
         <div className="watch-details"><h2>{playing.title}</h2><div className="watch-actions"><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { saved: !playing.saved })}>{playing.saved ? "♥ Enregistrée" : "♡ Enregistrer"}</button><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { read: !playing.read })}>{playing.read ? "Marquer comme nouvelle" : "Marquer comme vue"}</button><a href={playing.url} target="_blank" rel="noreferrer">Ouvrir sur {playing.sourceKind === "youtube" ? "YouTube" : "le site"} ↗</a></div></div>
       </section>}
-      {view === "sources" ? <SourceBrowser sources={sources} loading={sourcesLoading} refreshing={refreshing} onAdd={() => setOpen(true)} onOpen={source => navigate("all", source.id)} onRefresh={source => void refresh(source)} onRemove={source => void remove(source)} /> : <>
+      {view === "sources" ? <SourceBrowser sources={sources} loading={sourcesLoading} refreshing={refreshing} cleaningShorts={cleaningShorts} onAdd={() => setOpen(true)} onOpen={source => navigate("all", source.id)} onRefresh={source => void refresh(source)} onRemove={source => void remove(source)} onRemoveShorts={() => void removeShorts()} /> : <>
         <div className="feed-overview"><span className="content-type">{contentTypes[contentType].icon} {contentTypes[contentType].label}</span><span>{view === "inbox" ? page.total + " à découvrir" : page.total + " contenu(s) dans cette vue"}</span><span className="overview-end">Tes flux, sans perdre le fil.</span></div>
         <div className="content-filters" aria-label="Filtrer par type de contenu">{(Object.keys(contentTypes) as ContentType[]).map(type => <button key={type} className={contentType === type ? "filter-active" : ""} aria-pressed={contentType === type} onClick={() => { closePlayer(); setContentType(type); setSelected(new Set()); setLoading(true); }}>{contentTypes[type].label}</button>)}</div>
         <div className="library-toolbar"><div><h2>{currentSource ? "Historique de la source" : "Toutes les sources"}</h2><p>{loading ? "Chargement…" : page.total + " contenu(s)"}{view === "all" && " · historique collecté"}</p></div><label className="video-search"><span aria-hidden="true">⌕</span><input type="search" maxLength={200} value={query} onChange={event => { setQuery(event.target.value); setSelected(new Set()); }} placeholder="Rechercher dans les flux…" aria-label="Rechercher dans les flux" /></label></div>

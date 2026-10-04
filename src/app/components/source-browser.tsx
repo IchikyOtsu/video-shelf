@@ -12,14 +12,16 @@ function syncLabel(value: string | null) {
   return Number.isNaN(date.getTime()) ? "Dernière actualisation inconnue" : "Dernière réussite : " + new Intl.DateTimeFormat("fr-BE", { dateStyle: "short", timeStyle: "short" }).format(date);
 }
 
-export function SourceBrowser({ sources, loading, refreshing, onAdd, onOpen, onRefresh, onRemove }: {
+export function SourceBrowser({ sources, loading, refreshing, cleaningShorts, onAdd, onOpen, onRefresh, onRemove, onRemoveShorts }: {
   sources: SourceSummary[];
   loading: boolean;
   refreshing: boolean;
+  cleaningShorts: boolean;
   onAdd(): void;
   onOpen(source: SourceSummary): void;
   onRefresh(source: SourceSummary): void;
   onRemove(source: SourceSummary): void;
+  onRemoveShorts(): void;
 }) {
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -29,7 +31,7 @@ export function SourceBrowser({ sources, loading, refreshing, onAdd, onOpen, onR
     return (["video", "article", "podcast"] as const).map(type => ({ type, sources: filtered.filter(source => source.contentType === type) })).filter(group => group.sources.length);
   }, [query, sources]);
   return <section className="sources-page" aria-label="Gestion des sources">
-    <div className="library-toolbar"><div><h2>Les sources suivies</h2><p>{sources.length} source(s)</p></div><button className="dark-button" onClick={onAdd}>＋ Ajouter des sources</button></div>
+    <div className="library-toolbar"><div><h2>Les sources suivies</h2><p>{sources.length} source(s)</p></div><div className="source-toolbar-actions">{sources.some(source => source.kind === "youtube") ? <button className="quiet-button" disabled={cleaningShorts} onClick={onRemoveShorts}>{cleaningShorts ? "Nettoyage…" : "Retirer les Shorts importés"}</button> : null}<button className="dark-button" onClick={onAdd}>＋ Ajouter des sources</button></div></div>
     <label className="source-search"><span>⌕</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Rechercher une source…" aria-label="Rechercher une source" /></label>
     {loading ? <p role="status" className="list-loading">Chargement des sources…</p> : groups.length ? groups.map(group => {
       const isCollapsed = collapsed.has(group.type);
