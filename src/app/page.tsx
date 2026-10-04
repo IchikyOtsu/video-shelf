@@ -230,7 +230,7 @@ export default function Home() {
   if (!user) return <main className="login-home"><Link href="/" className="brand"><span>◒</span>shelf</Link>{error && <p role="alert" className="form-error">{error}</p>}<section><p className="eyebrow">TES SOURCES. TON ESPACE.</p><h1>Tout suivre.<br />À ton rythme.</h1><p>Un agrégateur pour rassembler tes sources, découvrir leurs nouveautés et garder ce qui compte. Commence avec tes flux de vidéos.</p><div><Link href="/signup" className="dark-button">Créer un compte</Link><Link href="/signin" className="quiet-button">Se connecter</Link></div></section></main>;
   const currentSource = sources.find(source => source.id === sourceId);
   const title = view === "sources" ? "Sources" : currentSource ? currentSource.name : libraryViews[view].label;
-  const description = view === "sources" ? "Les flux que tu suis et qui alimentent tes nouveautés." : currentSource ? "Tout l’historique collecté pour cette source, y compris les contenus déjà vus." : libraryViews[view].description;
+  const description = view === "sources" ? "Les flux que tu suis et qui alimentent tes nouveautés." : currentSource ? "Tout l’historique collecté pour cette source, y compris les contenus déjà vus." : "";
   const playerId = playing ? youtubeVideoId(playing.url) : null;
   const inboxGroups = view === "inbox" ? groupInboxItems(page.items) : [];
   const selectedIds = [...selected];
@@ -249,7 +249,7 @@ export default function Home() {
       <button className="account" onClick={() => setSettingsOpen(true)} aria-haspopup="dialog"><span>{(user.name || user.email)[0].toUpperCase()}</span><div><b>{user.name || user.email.split("@")[0]}</b><small>Réglages du compte</small></div><i aria-hidden="true">›</i></button>
     </aside>
     <section className="dashboard-content">
-      <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1><p>{description}</p></div><button className="outline-button" disabled={refreshing || !sources.some(source => source.kind === "youtube")} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
+      <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1>{description && <p>{description}</p>}</div><button className="outline-button" disabled={refreshing || !sources.some(source => source.kind === "youtube")} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
       {error && <div className="feedback error" role="alert"><span>{error}</span><button aria-label="Fermer l’erreur" onClick={() => setError("")}>×</button></div>}
       {notice && <div className="feedback" role="status"><span>{notice}</span><button aria-label="Fermer le message" onClick={() => setNotice("")}>×</button></div>}
       {playing && <section className="watch-panel" ref={player} tabIndex={-1} aria-label="Lecteur vidéo">

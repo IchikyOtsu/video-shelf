@@ -11,10 +11,10 @@ export type LibraryPage = {
   items: FeedItem[]; total: number; nextOffset: number | null; counts: LibraryCounts;
 };
 export const libraryViews = {
-  inbox: { label: "Nouveautés", icon: "▣", description: "Les contenus que tu n’as pas encore vus, à découvrir à ton rythme." },
-  all: { label: "Bibliothèque", icon: "▤", description: "Tous les contenus collectés, des dernières nouveautés aux anciens flux." },
-  saved: { label: "Enregistrés", icon: "♡", description: "Tes contenus enregistrés, qu’ils soient nouveaux ou déjà vus." },
-  archive: { label: "Vues", icon: "✓", description: "Les contenus déjà vus, toujours disponibles dans ta bibliothèque." },
+  inbox: { label: "Nouveautés", icon: "▣" },
+  all: { label: "Bibliothèque", icon: "▤" },
+  saved: { label: "Enregistrés", icon: "♡" },
+  archive: { label: "Vues", icon: "✓" },
 } as const;
 export const contentTypes = {
   all: { label: "Tous", icon: "◫" },
