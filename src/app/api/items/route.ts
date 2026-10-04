@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   const stateJoin = itemStateJoin(user.id);
   try {
     const [rows, [total], [counts]] = await Promise.all([
-      db.select({ id: items.id, title: items.title, url: items.url, summary: items.summary, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, mediaType: items.mediaType, read: itemRead, saved: itemSaved })
+      db.select({ id: items.id, title: items.title, url: items.url, summary: items.summary, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, mediaType: items.mediaType, read: itemRead, saved: itemSaved, progressSeconds: sql<number>`coalesce(${itemStates.progressSeconds}, 0)::int`, durationSeconds: itemStates.durationSeconds, lastPlayedAt: itemStates.lastPlayedAt })
         .from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition)
         .orderBy(sort === "oldest" ? asc(sql`coalesce(${items.publishedAt}, ${items.createdAt})`) : desc(sql`coalesce(${items.publishedAt}, ${items.createdAt})`), asc(items.id)).limit(36).offset(offset),
       db.select({ value: sql<number>`count(*)::int` }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition),

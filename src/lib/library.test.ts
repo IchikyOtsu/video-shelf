@@ -28,7 +28,7 @@ test("state changes reject empty, malformed or unbounded payloads", () => {
 });
 
 test("the inbox groups rendered items by the browser-local publication day", () => {
-  const item = (id: string, publishedAt: string): FeedItem => ({ id, publishedAt, title: id, url: "https://example.com", imageUrl: null, summary: null, sourceName: "Source", sourceId: id, sourceKind: "youtube", mediaType: "video", read: false, saved: false });
+  const item = (id: string, publishedAt: string): FeedItem => ({ id, publishedAt, title: id, url: "https://example.com", imageUrl: null, summary: null, sourceName: "Source", sourceId: id, sourceKind: "youtube", mediaType: "video", read: false, saved: false, progressSeconds: 0, durationSeconds: null, lastPlayedAt: null });
   const groups = groupInboxItems([
     item("today", "2026-10-04T15:00:00+02:00"),
     item("yesterday", "2026-10-03T11:00:00+02:00"),

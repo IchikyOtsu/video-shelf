@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -6,13 +5,14 @@ import { db } from "@/db";
 import { items, itemStates, sources } from "@/db/schema";
 import { cookieName, readSession } from "@/lib/auth";
 import { buildItemCondition, itemStateJoin } from "@/lib/item-query";
+import { deterministicItemStateId } from "@/lib/item-state";
 import { parseLibraryQuery, parseStateChange } from "@/lib/library";
 
 async function upsertState(userId: string, ids: string[], fields: { read?: boolean; saved?: boolean }) {
   if (!db) throw new Error("Database not connected");
   for (let start = 0; start < ids.length; start += 500) {
     const rows = ids.slice(start, start + 500).map(itemId => ({
-      id: createHash("sha256").update(userId + ":" + itemId).digest("hex").slice(0, 32),
+      id: deterministicItemStateId(userId, itemId),
       userId, itemId, ...fields, updatedAt: new Date(),
     }));
     await db.insert(itemStates).values(rows).onConflictDoUpdate({ target: itemStates.id, set: { ...fields, updatedAt: new Date() } });

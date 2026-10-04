@@ -12,7 +12,7 @@ A personal feed aggregator with a unified inbox, a permanent collected library, 
 - **Vues** contains processed items without treating them as a separate archive to manage.
 - Opening a **Source** always starts on its complete collected history. The source status filter can narrow that history to new or seen items.
 
-Opening a video does not immediately change its state. Shelf marks it as seen after the player has stayed open for 30 seconds; the user can also mark it as seen or new manually. Both visible-page and server-side full-filter bulk actions are available from Nouveautés.
+Opening a video resumes its account-scoped position from Neon. Shelf samples active playback locally and persists integer-second progress about every 10 seconds, plus pause/close lifecycle saves. A video becomes seen after 90% of actual playback or when YouTube reports that it ended; manual seen/new actions remain authoritative and never erase progress.
 
 ## Database (Vercel + Neon)
 

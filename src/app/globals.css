@@ -88,6 +88,9 @@ a { color:inherit; }
 .watch-heading { display:flex; justify-content:space-between; align-items:center; padding:10px 20px; font-size:10px; letter-spacing:1.3px; color:var(--muted); }
 .watch-heading button { font-size:24px; background:none; border:0; }
 .youtube-player { display:block; width:100%; aspect-ratio:16/9; border:0; background:#171813; }
+.youtube-player-shell { position:relative; background:#171813; }
+.youtube-player-shell .youtube-player { width:100%; }
+.playback-time { margin:0; padding:7px 12px; background:#171813; color:#e7e7df!important; text-align:right; font-size:10px!important; }
 .watch-details { padding:20px; }
 .watch-details p { color:var(--coral); font-size:12px; margin:0 0 8px; }
 .watch-details h2 { margin:0; font-size:21px; line-height:1.5; }
@@ -177,6 +180,8 @@ a { color:inherit; }
 .card-footer { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; }
 .card-footer button { border:0; background:none; color:#647153; padding:7px 0; font-size:11px; }
 .unread-badge { background:#fffdf0eb; color:#475736; }
+.playback-progress { position:absolute; inset:auto 0 0; z-index:2; height:4px; background:#ffffff73; }
+.playback-progress>span { display:block; height:100%; background:#d85f3f; }
 .list-loading { padding:55px 20px; text-align:center; font-size:13px; color:var(--muted); }
 .pagination { display:flex; flex-direction:column; align-items:center; gap:12px; padding:35px 0 15px; }
 .pagination p,.history-note { font-size:11px; line-height:1.7; color:var(--muted); }

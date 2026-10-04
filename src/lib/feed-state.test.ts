@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyOptimisticItemState, pruneSelection, toggleSelection } from "./feed-state";
+import { applyOptimisticItemState, pruneSelection, toggleSelection, updateItemProgress } from "./feed-state";
 import type { FeedItem, LibraryPage } from "./library";
 
 const item = (id: string, overrides: Partial<FeedItem> = {}): FeedItem => ({
   id, title: id, url: "https://example.com/" + id, imageUrl: null, summary: null,
   publishedAt: "2026-10-04T12:00:00Z", sourceName: "Source", sourceId: "11111111-1111-4111-8111-111111111111",
-  sourceKind: "youtube", mediaType: "video", read: false, saved: false, ...overrides,
+  sourceKind: "youtube", mediaType: "video", read: false, saved: false,
+  progressSeconds: 0, durationSeconds: null, lastPlayedAt: null, ...overrides,
 });
 const page = (items: FeedItem[], viewTotal = items.length): LibraryPage => ({
   items, total: viewTotal, nextOffset: 24, counts: { inbox: 2, all: 2, saved: 1, archive: 0 },
@@ -40,4 +41,22 @@ test("selection toggles and is pruned when filters or optimistic state hide item
   const selected = toggleSelection(toggleSelection(new Set<string>(), "one"), "two");
   assert.deepEqual([...pruneSelection(selected, [item("two")])], ["two"]);
   assert.deepEqual([...toggleSelection(selected, "one")], ["two"]);
+});
+
+test("manual seen and new changes preserve playback progress", () => {
+  const watched = item("one", { progressSeconds: 1920, durationSeconds: 3600, saved: true });
+  const seen = applyOptimisticItemState(page([watched]), [watched.id], { read: true }, "all").items[0];
+  const fresh = applyOptimisticItemState(page([seen]), [seen.id], { read: false }, "all").items[0];
+  assert.equal(fresh.progressSeconds, 1920);
+  assert.equal(fresh.durationSeconds, 3600);
+  assert.equal(fresh.saved, true);
+});
+
+test("local progress updates preserve saved and unrelated item state without changing counts", () => {
+  const original = page([item("one", { saved: true }), item("two", { read: true })]);
+  const result = updateItemProgress(original, "one", 42, 100, "2026-10-04T14:00:00Z");
+  assert.equal(result.items[0].progressSeconds, 42);
+  assert.equal(result.items[0].saved, true);
+  assert.equal(result.items[1].read, true);
+  assert.deepEqual(result.counts, original.counts);
 });

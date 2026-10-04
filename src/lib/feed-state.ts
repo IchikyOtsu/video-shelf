@@ -48,3 +48,10 @@ export function pruneSelection(selection: Set<string>, visibleItems: FeedItem[])
   const visible = new Set(visibleItems.map(item => item.id));
   return new Set([...selection].filter(id => visible.has(id)));
 }
+
+export function updateItemProgress(page: LibraryPage, itemId: string, progressSeconds: number, durationSeconds: number | null, lastPlayedAt = new Date().toISOString()) {
+  return {
+    ...page,
+    items: page.items.map(item => item.id === itemId ? { ...item, progressSeconds, durationSeconds: durationSeconds ?? item.durationSeconds, lastPlayedAt } : item),
+  };
+}

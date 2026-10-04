@@ -3,13 +3,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { youtubeVideoId } from "@/lib/video";
 import { request } from "@/lib/client";
-import { scheduleAutoSeen } from "@/lib/auto-seen";
-import { applyOptimisticItemState, pruneSelection, toggleSelection, type ItemStateChange } from "@/lib/feed-state";
+import { applyOptimisticItemState, pruneSelection, toggleSelection, updateItemProgress, type ItemStateChange } from "@/lib/feed-state";
 import { contentTypes, groupInboxItems, libraryViews, parseLibraryQuery, uuidPattern, type ContentType, type FeedItem, type LibraryPage, type LibraryView } from "@/lib/library";
 import { AddSource } from "./components/add-source";
 import { BulkActionBar } from "./components/bulk-action-bar";
 import { ItemCard } from "./components/item-card";
 import { SourceBrowser, type SourceSummary } from "./components/source-browser";
+import { YouTubePlayer } from "./components/youtube-player";
 
 type User = { id: string; email: string; name: string | null };
 type Source = SourceSummary;
@@ -73,13 +73,12 @@ export default function Home() {
   const [feedRevision, setFeedRevision] = useState(0);
   const [sourceRevision, setSourceRevision] = useState(0);
   const [playing, setPlaying] = useState<FeedItem | null>(null);
+  const [completionSuppressedId, setCompletionSuppressedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const player = useRef<HTMLElement>(null);
   const generation = useRef(0);
   const changeLock = useRef(false);
   const moreLock = useRef(false);
-  const playingId = playing?.id;
-  const playingRead = playing?.read;
   useEffect(() => {
     request("/api/auth/me").then(async ({ user: account }) => {
       if (account) {
@@ -135,19 +134,6 @@ export default function Home() {
     if (view === "sources") return;
     history.replaceState(null, "", "?" + params);
   }, [params, view]);
-  useEffect(() => {
-    if (!playingId || playingRead) return;
-    const itemId = playingId;
-    return scheduleAutoSeen(() => {
-      setPage(previous => applyOptimisticItemState(previous, [itemId], { read: true }, view === "sources" ? "all" : view));
-      request("/api/items/state", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [itemId], read: true }) })
-        .then(() => {
-          setPlaying(previous => previous?.id === itemId ? { ...previous, read: true } : previous);
-          setNotice("Vidéo marquée comme vue après 30 secondes de lecture.");
-        })
-        .catch(() => { setError("La vidéo continue, mais son statut n’a pas pu être mis à jour."); setFeedRevision(value => value + 1); });
-    });
-  }, [playingId, playingRead, view]);
   async function more() {
     if (page.nextOffset === null || moreLock.current || loading) return;
     const current = generation.current;
@@ -164,8 +150,9 @@ export default function Home() {
     if (next !== "sources") setLoading(true);
   }
   async function changeState(ids: string[], fields: ItemStateChange) {
-    if (changeLock.current || !ids.length) return;
+    if (changeLock.current || !ids.length) return false;
     changeLock.current = true; setChanging(true); setError("");
+    if (playing && ids.includes(playing.id) && fields.read !== undefined) setCompletionSuppressedId(fields.read ? null : playing.id);
     const previousPage = page;
     const previousPlaying = playing;
     const previousSelection = selected;
@@ -181,6 +168,7 @@ export default function Home() {
       if (fields.read !== undefined) setNotice(fields.read ? "Contenu marqué comme vu. Il reste dans la Bibliothèque et sa Source." : "Contenu marqué comme nouveau.");
     } catch (e) { setPage(previousPage); setPlaying(previousPlaying); setSelected(previousSelection); setError((e as Error).message); }
     finally { changeLock.current = false; setChanging(false); }
+    return true;
   }
   async function markAllResultsSeen() {
     if (changing || !page.total || !confirm("Marquer les " + page.total + " résultats actuels comme vus ? Ils resteront dans la Bibliothèque et sous leur Source.")) return;
@@ -195,9 +183,15 @@ export default function Home() {
     finally { changeLock.current = false; setChanging(false); }
   }
   function play(item: FeedItem) {
+    if (playing?.id !== item.id) setCompletionSuppressedId(null);
     setPlaying(item);
     requestAnimationFrame(() => { player.current?.scrollIntoView({ behavior: "smooth", block: "start" }); player.current?.focus({ preventScroll: true }); });
   }
+  function updateProgress(itemId: string, progressSeconds: number, durationSeconds: number | null, lastPlayedAt: string) {
+    setPage(previous => updateItemProgress(previous, itemId, progressSeconds, durationSeconds, lastPlayedAt));
+    setPlaying(previous => previous?.id === itemId ? { ...previous, progressSeconds, durationSeconds: durationSeconds ?? previous.durationSeconds, lastPlayedAt } : previous);
+  }
+  function closePlayer() { setPlaying(null); setCompletionSuppressedId(null); }
   async function refresh(source?: Source) {
     if (refreshing) return;
     setRefreshing(true); setError(""); setNotice("");
@@ -256,9 +250,9 @@ export default function Home() {
       {error && <div className="feedback error" role="alert"><span>{error}</span><button aria-label="Fermer l’erreur" onClick={() => setError("")}>×</button></div>}
       {notice && <div className="feedback" role="status"><span>{notice}</span><button aria-label="Fermer le message" onClick={() => setNotice("")}>×</button></div>}
       {playing && <section className="watch-panel" ref={player} tabIndex={-1} aria-label="Lecteur vidéo">
-        <div className="watch-heading"><span>EN COURS DE LECTURE · {playing.sourceName}</span><button onClick={() => setPlaying(null)} aria-label="Fermer le lecteur">×</button></div>
-        {playerId ? <iframe key={playerId} className="youtube-player" src={"https://www.youtube-nocookie.com/embed/" + playerId + "?autoplay=1&rel=0"} title={playing.title} allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerPolicy="strict-origin-when-cross-origin" allowFullScreen /> : <p className="player-fallback">Cette vidéo ne peut pas être intégrée. Ouvre-la sur le site de la source.</p>}
-        <div className="watch-details"><h2>{playing.title}</h2><div className="watch-actions"><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { saved: !playing.saved })}>{playing.saved ? "♥ Enregistrée" : "♡ Enregistrer"}</button><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { read: !playing.read })}>{playing.read ? "Marquer comme nouvelle" : "Marquer comme vue"}</button><a href={playing.url} target="_blank" rel="noreferrer">Ouvrir sur {playing.sourceKind === "youtube" ? "YouTube" : "le site"} ↗</a></div><small>Après 30 secondes dans le lecteur, la vidéo est marquée comme vue. Tu peux toujours la remettre dans les nouveautés. Si la lecture est bloquée, ouvre le site de la source.</small></div>
+        <div className="watch-heading"><span>EN COURS DE LECTURE · {playing.sourceName}</span><button onClick={closePlayer} aria-label="Fermer le lecteur">×</button></div>
+        {playerId ? <YouTubePlayer key={playing.id} itemId={playing.id} videoId={playerId} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : <p className="player-fallback">Cette vidéo ne peut pas être intégrée. Ouvre-la sur le site de la source.</p>}
+        <div className="watch-details"><h2>{playing.title}</h2><div className="watch-actions"><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { saved: !playing.saved })}>{playing.saved ? "♥ Enregistrée" : "♡ Enregistrer"}</button><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { read: !playing.read })}>{playing.read ? "Marquer comme nouvelle" : "Marquer comme vue"}</button><a href={playing.url} target="_blank" rel="noreferrer">Ouvrir sur {playing.sourceKind === "youtube" ? "YouTube" : "le site"} ↗</a></div><small>La progression est enregistrée environ toutes les 10 secondes. À 90 %, la vidéo passe automatiquement dans Vues ; une action manuelle reste prioritaire pour cette session.</small></div>
       </section>}
       {view === "sources" ? <SourceBrowser sources={sources} loading={sourcesLoading} refreshing={refreshing} onAdd={() => setOpen(true)} onOpen={source => navigate("all", source.id)} onRefresh={source => void refresh(source)} onRemove={source => void remove(source)} /> : <>
         <div className="feed-overview"><span className="content-type">{contentTypes[contentType].icon} {contentTypes[contentType].label}</span><span>{view === "inbox" ? page.total + " à découvrir" : page.total + " contenu(s) dans cette vue"}</span><span className="overview-end">Tes flux, sans perdre le fil.</span></div>

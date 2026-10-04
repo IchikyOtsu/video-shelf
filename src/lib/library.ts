@@ -4,6 +4,7 @@ export type FeedItem = {
   id: string; title: string; url: string; imageUrl: string | null;
   publishedAt: string | null; sourceName: string; sourceId: string;
   summary: string | null; mediaType: string; sourceKind: string; read: boolean; saved: boolean;
+  progressSeconds: number; durationSeconds: number | null; lastPlayedAt: string | null;
 };
 export type LibraryCounts = Record<LibraryView, number>;
 export type LibraryPage = {
