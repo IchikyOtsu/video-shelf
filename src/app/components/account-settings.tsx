@@ -19,12 +19,12 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [mode, setMode] = useState<
-    "" | "password" | "setup" | "confirm" | "disable" | "codes" | "delete"
+    "" | "password" | "setup" | "confirm" | "disable" | "codes" | "regenerate" | "delete"
   >("");
   const [secret, setSecret] = useState("");
   const [qr, setQr] = useState("");
   const [codes, setCodes] = useState<string[]>([]);
-  useEffect(() => {
+  const loadAccount = () => {
     let live = true;
     request("/api/account")
       .then((data) => {
@@ -36,7 +36,8 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
     return () => {
       live = false;
     };
-  }, []);
+  };
+  useEffect(() => loadAccount(), []);
   useEffect(() => {
     const close = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -115,6 +116,26 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
       setNotice("La double authentification est désactivée.");
     }
   }
+  async function regenerateCodes(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const data = await action("/api/account/totp/recovery-codes", {
+      currentPassword: form.get("currentPassword"),
+      code: form.get("code"),
+    });
+    if (data) {
+      setCodes(data.recoveryCodes);
+      setMode("codes");
+    }
+  }
+  async function copyCodes() {
+    try {
+      await navigator.clipboard.writeText(codes.join("\n"));
+      setNotice("Codes copiés dans le presse-papiers.");
+    } catch {
+      setError("Impossible de copier les codes. Copiez-les manuellement.");
+    }
+  }
   async function removeAccount(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -167,9 +188,10 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
           </button>
         </header>
         {!account ? (
-          <p className="settings-status">
-            {error || "Chargement des réglages…"}
-          </p>
+          <div className="settings-status">
+            <p>{error || "Chargement des réglages…"}</p>
+            {error && <button className="outline-button" onClick={loadAccount}>Réessayer</button>}
+          </div>
         ) : (
           <div className="settings-body">
             <section>
@@ -200,7 +222,7 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
                       setNotice(
                         data.sent
                           ? "E-mail de vérification envoyé."
-                          : "E-mail non configuré : ajoutez RESEND_API_KEY et EMAIL_FROM.",
+                          : "La livraison de l’e-mail est temporairement indisponible. Réessayez plus tard.",
                       );
                   }}
                 >
@@ -225,12 +247,7 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
                 </div>
                 {account.totpEnabled ? (
                   <div>
-                    <button
-                      className="quiet-button"
-                      onClick={() => setMode("codes")}
-                    >
-                      Codes
-                    </button>
+                    <button className="quiet-button" onClick={() => setMode("codes")}>Codes</button>
                     <button
                       className="quiet-button danger"
                       onClick={() => setMode("disable")}
@@ -345,13 +362,10 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
                       Conservez-les hors ligne. Ils ne seront plus affichés.
                     </p>
                     <pre>{codes.join("\n")}</pre>
+                    <button className="outline-button" onClick={() => void copyCodes()}>Copier tous les codes</button>
                   </>
                 ) : (
-                  <p>
-                    Les codes de récupération sont affichés uniquement lors de
-                    leur génération. Vous pouvez désactiver puis réactiver le
-                    TOTP pour en créer de nouveaux.
-                  </p>
+                  <><p>Générez de nouveaux codes si vous avez perdu les anciens. Les codes précédents ne fonctionneront plus.</p><button className="outline-button" onClick={() => setMode("regenerate")}>Générer de nouveaux codes</button></>
                 )}
                 <button
                   className="outline-button"
@@ -376,7 +390,7 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
                 <input
                   name="code"
                   inputMode="numeric"
-                  placeholder="Code d’authentification"
+                  placeholder="Code d’authentification ou de récupération"
                   required
                 />
                 <button
@@ -385,6 +399,15 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
                 >
                   Désactiver
                 </button>
+              </form>
+            )}
+            {mode === "regenerate" && (
+              <form className="settings-form" onSubmit={regenerateCodes}>
+                <h3>Générer de nouveaux codes</h3>
+                <p>Cette opération invalidera tous vos anciens codes de récupération.</p>
+                <input name="currentPassword" type="password" placeholder="Mot de passe actuel" required />
+                <input name="code" inputMode="numeric" autoComplete="one-time-code" placeholder="Code d’authentification" required />
+                <button className="dark-button" disabled={Boolean(busy)}>Générer les codes</button>
               </form>
             )}
             {mode === "delete" && (
