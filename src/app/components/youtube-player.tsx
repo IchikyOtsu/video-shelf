@@ -159,5 +159,5 @@ export function YouTubePlayer({ itemId, videoId, initialProgress, initialDuratio
     };
   }, [itemId, videoId]);
 
-  return <div className="youtube-player-shell"><div ref={mount} className="youtube-player" /><p className="playback-time">{position > 0 ? "Lecture " : "Début · "}{formatDuration(position)}{duration ? " / " + formatDuration(duration) : ""}</p></div>;
+  return <div className="youtube-player-shell"><div className="youtube-player-frame"><div ref={mount} className="youtube-player" /></div><p className="playback-time">{position > 0 ? "Lecture " : "Début · "}{formatDuration(position)}{duration ? " / " + formatDuration(duration) : ""}</p></div>;
 }
