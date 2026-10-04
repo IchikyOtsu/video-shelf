@@ -4,6 +4,7 @@ import { itemStates, items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
 import { rssProvider } from "./rss";
 import type { ContentType } from "./library";
+import { deterministicItemStateId } from "./item-state";
 
 export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
 export type NormalizedItem = {
@@ -37,7 +38,7 @@ export function shortSyncError(error: unknown) {
 }
 
 export function initialImportStates(userId: string, itemIds: string[], initialImport: boolean) {
-  return initialImport ? itemIds.map(itemId => ({ userId, itemId, read: true })) : [];
+  return initialImport ? itemIds.map(itemId => ({ id: deterministicItemStateId(userId, itemId), userId, itemId, read: true })) : [];
 }
 
 export async function runSourceSync(

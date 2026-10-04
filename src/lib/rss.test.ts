@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deduplicateNormalizedItems, initialImportStates } from "./sources";
 import { parseRssOrAtom } from "./rss";
+import { deterministicItemStateId } from "./item-state";
 
 test("RSS feeds map article metadata and derive their site", () => {
   const result = parseRssOrAtom(`<?xml version="1.0"?><rss><channel><title>Journal</title><link>https://journal.test</link><item><guid>article-1</guid><title>Bonjour</title><link>/bonjour</link><dc:creator xmlns:dc="x">Ada</dc:creator><description>Résumé</description><pubDate>Tue, 01 Oct 2026 10:00:00 GMT</pubDate><media:thumbnail xmlns:media="x" url="https://journal.test/image.jpg"/></item></channel></rss>`, "https://journal.test/feed.xml");
@@ -34,6 +35,6 @@ test("duplicate RSS entries are removed before persistence", () => {
 });
 
 test("initial RSS imports are seen while later RSS sync items remain unseen", () => {
-  assert.deepEqual(initialImportStates("user-1", ["initial-item"], true), [{ userId: "user-1", itemId: "initial-item", read: true }]);
+  assert.deepEqual(initialImportStates("user-1", ["initial-item"], true), [{ id: deterministicItemStateId("user-1", "initial-item"), userId: "user-1", itemId: "initial-item", read: true }]);
   assert.deepEqual(initialImportStates("user-1", ["later-item"], false), []);
 });

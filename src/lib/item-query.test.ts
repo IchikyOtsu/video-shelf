@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { buildItemCondition } from "./item-query";
+import { buildItemCondition, itemStateJoin } from "./item-query";
 
 const userId = "22222222-2222-4222-8222-222222222222";
 const sourceId = "11111111-1111-4111-8111-111111111111";
@@ -35,4 +35,11 @@ test("content type filtering is independent from the library view", () => {
   const all = compile("saved", "", "all");
   assert.ok(!all.params.includes("all"));
   assert.doesNotMatch(all.sql, /"items"\."media_type" =/);
+});
+
+test("state joins select only the newest legacy state for an item", () => {
+  const query = new PgDialect().sqlToQuery(itemStateJoin(userId)!);
+  assert.match(query.sql, /not exists/);
+  assert.match(query.sql, /newer_item_state/);
+  assert.ok(query.params.includes(userId));
 });

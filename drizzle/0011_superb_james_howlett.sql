@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "item_states_user_item_unique" ON "item_states" USING btree ("user_id","item_id");
