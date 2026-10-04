@@ -1,10 +1,18 @@
-"use client";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { eq } from "drizzle-orm";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { db } from "@/db";
+import { users } from "@/db/schema";
+import { cookieName, readSession } from "@/lib/auth";
+import { guestPageDestination } from "@/lib/auth-flow";
+import SignUpForm from "./signup-form";
 
-export default function SignUp() {
-  const [error, setError] = useState(""); const [loading, setLoading] = useState(false); const router = useRouter();
-  async function submit(e: FormEvent<HTMLFormElement>) { e.preventDefault(); setLoading(true); setError(""); const form = new FormData(e.currentTarget); const response = await fetch("/api/auth/signup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: form.get("name"), email: form.get("email"), password: form.get("password") }) }); const data = await response.json().catch(() => ({})); if (!response.ok) { setError(data.error || "La création du compte a échoué. Réessayez plus tard."); setLoading(false); return; } router.push("/onboarding"); router.refresh(); }
-  return <main className="auth-page"><section className="auth-card"><Link className="brand" href="/"><span>◒</span>shelf</Link><h1>Créer votre espace.</h1><p>Vos sources et votre lecture restent à vous.</p><form className="auth-form" onSubmit={submit}><label>Prénom <small>(facultatif)</small><input name="name" type="text" autoComplete="name" /></label><label>Email<input name="email" type="email" autoComplete="email" required /></label><label>Mot de passe <small>(8 caractères minimum)</small><input name="password" type="password" autoComplete="new-password" minLength={8} required /></label>{error && <div className="form-error">{error}</div>}<button className="dark-button" disabled={loading}>{loading ? "Création…" : "Créer mon espace"}</button></form><p className="signup-note">Après la création, vous pourrez vérifier votre e-mail et activer la double authentification si vous le souhaitez.</p><p className="auth-switch">Déjà un compte ? <Link href="/signin">Se connecter</Link></p></section></main>;
+export default async function SignUp() {
+  const session = await readSession((await cookies()).get(cookieName)?.value);
+  if (session && db) {
+    const user = await db.query.users.findFirst({ where: eq(users.id, session.id), columns: { emailVerifiedAt: true, onboardingCompletedAt: true } });
+    const destination = guestPageDestination(user ? { emailVerified: Boolean(user.emailVerifiedAt), onboardingCompleted: Boolean(user.onboardingCompletedAt) } : null);
+    if (destination) redirect(destination);
+  }
+  return <SignUpForm />;
 }

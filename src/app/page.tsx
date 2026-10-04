@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { youtubeVideoId } from "@/lib/video";
 import { request } from "@/lib/client";
+import { startLegacyMigration } from "@/lib/auth-flow";
 import { applyOptimisticItemState, pruneSelection, toggleSelection, updateItemProgress, type ItemStateChange } from "@/lib/feed-state";
 import { contentTypes, groupInboxItems, libraryViews, parseLibraryQuery, uuidPattern, type ContentType, type FeedItem, type LibraryPage, type LibraryView } from "@/lib/library";
 import { AddSource } from "./components/add-source";
@@ -33,7 +34,7 @@ async function migrateBrowserState(userId: string) {
   for (const [key, field] of [["saved", "saved"], ["watched", "read"]] as const) {
     const ids = Array.isArray(stored[key]) ? stored[key].filter((id: unknown) => typeof id === "string" && uuidPattern.test(id)) : [];
     for (let index = 0; index < ids.length; index += 100) {
-      await request("/api/items/state", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids.slice(index, index + 100), [field]: true }) });
+      await request("/api/items/state", { method: "PATCH", timeoutMs: 12_000, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids.slice(index, index + 100), [field]: true }) });
     }
   }
   try { localStorage.setItem("shelf:migrated:" + userId, "1"); } catch { /* Server state is already saved. */ }
@@ -83,12 +84,9 @@ export default function Home() {
   const changeLock = useRef(false);
   const moreLock = useRef(false);
   useEffect(() => {
-    request("/api/auth/me").then(async ({ user: account }) => {
-      if (account) {
-        try { await migrateBrowserState(account.id); }
-        catch { setNotice("Tes anciens enregistrements restent dans ce navigateur. Leur transfert sera réessayé à la prochaine connexion."); }
-      }
-      setUser(account || null);
+    request("/api/auth/me").then(({ user: account }) => {
+      if (!account) { setUser(null); return; }
+      startLegacyMigration(account, setUser, migrateBrowserState, () => setNotice("Tes anciens enregistrements restent dans ce navigateur. Leur transfert sera réessayé à la prochaine connexion."));
     }).catch(() => { setUser(null); setError("Connexion au serveur impossible."); });
   }, [accountRevision]);
   useEffect(() => { const timer = setTimeout(() => setSearch(query.trim()), 300); return () => clearTimeout(timer); }, [query]);
