@@ -230,7 +230,7 @@ export default function Home() {
   if (!user) return <main className="login-home"><Link href="/" className="brand"><span>◒</span>shelf</Link>{error && <p role="alert" className="form-error">{error}</p>}<section><p className="eyebrow">TES SOURCES. TON ESPACE.</p><h1>Tout suivre.<br />À ton rythme.</h1><p>Un agrégateur pour rassembler tes sources, découvrir leurs nouveautés et garder ce qui compte. Commence avec tes flux de vidéos.</p><div><Link href="/signup" className="dark-button">Créer un compte</Link><Link href="/signin" className="quiet-button">Se connecter</Link></div></section></main>;
   const currentSource = sources.find(source => source.id === sourceId);
   const title = view === "sources" ? "Sources" : currentSource ? currentSource.name : libraryViews[view].label;
-  const description = view === "sources" ? "Les flux que tu suis et qui alimentent tes nouveautés." : currentSource ? "Tout l’historique collecté pour cette source, y compris les contenus déjà vus." : "";
+  const description = currentSource ? "Tout l’historique collecté pour cette source, y compris les contenus déjà vus." : "";
   const playerId = playing ? youtubeVideoId(playing.url) : null;
   const inboxGroups = view === "inbox" ? groupInboxItems(page.items) : [];
   const selectedIds = [...selected];
