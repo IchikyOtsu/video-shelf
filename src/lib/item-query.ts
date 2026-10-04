@@ -1,12 +1,12 @@
 import { and, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { items, itemStates, sources } from "@/db/schema";
-import type { LibraryView } from "./library";
+import type { ContentType, LibraryView } from "./library";
 
 export type ItemFilters = {
   view: LibraryView;
   sourceId: string;
   query: string;
-  mediaType: string;
+  contentType: ContentType;
 };
 
 export const itemRead = sql<boolean>`coalesce(${itemStates.read}, false)`;
@@ -20,7 +20,7 @@ export function buildItemCondition(filters: ItemFilters, userId: string): SQL | 
   const term = "%" + filters.query.replace(/[\\%_]/g, "\\$&") + "%";
   return and(
     eq(sources.userId, userId),
-    eq(items.mediaType, filters.mediaType),
+    filters.contentType === "all" ? undefined : eq(items.mediaType, filters.contentType),
     filters.sourceId ? eq(sources.id, filters.sourceId) : undefined,
     filters.view === "inbox" ? eq(itemRead, false) : filters.view === "archive" ? eq(itemRead, true) : filters.view === "saved" ? eq(itemSaved, true) : undefined,
     filters.query ? or(ilike(items.title, term), ilike(sources.name, term)) : undefined,

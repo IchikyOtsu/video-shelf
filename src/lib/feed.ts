@@ -16,6 +16,7 @@ export function parseYouTubeFeed(xml: string): NormalizedItem[] {
 }
 
 export const youtubeProvider: SourceProvider = {
+  contentType: "video",
   async sync(source) {
     const response = await fetch(source.feedUrl, { signal: AbortSignal.timeout(10000), next: { revalidate: 0 }, headers: { "user-agent": "Shelf/1.0" } });
     if (!response.ok) throw new Error("Le flux YouTube est inaccessible.");

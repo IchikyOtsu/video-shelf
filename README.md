@@ -1,6 +1,6 @@
 # Shelf
 
-A personal feed aggregator with a temporary inbox, a permanent collected library, saved items, seen items, and source management. Video feeds are the first supported format, with YouTube as the first provider.
+A personal feed aggregator with a unified inbox, a permanent collected library, saved items, seen items, and source management. Video feeds are the first supported format, with YouTube as the first provider; the data and UI contracts also cover articles and podcasts for future providers.
 
 ## Product model
 
@@ -42,7 +42,11 @@ Authentication uses secure HTTP-only session cookies and password hashes. Source
 - **Bibliothèque**: all collected videos, including seen and saved ones. Search, source filters, oldest/newest sorting, and pagination work across the complete collection.
 - **Enregistrés**: saved items, independent of whether they have been seen.
 - **Vues**: processed items. Mark an item as new to put it back in Nouveautés.
-- **Sources**: view a source’s collected feed, refresh it, visit its site, or remove it and its collected contents.
+- **Sources**: search collapsible video/article/podcast groups, view a source’s collected feed, refresh it, visit its site, or remove it and its collected contents.
+
+The independent `type=all|video|article|podcast` query filter can be combined with every library view, source, search and sort. Item state writes update the visible list and counts optimistically; normal seen/saved actions do not reload the source collection.
+
+Pagination currently remains offset-based. Local removals adjust the next offset so ordinary Inbox actions do not skip the next row, but concurrent inserts from a source sync can still move page boundaries; a future cursor based on `(publishedAt, itemId)` is the intended follow-up if feeds become high-volume.
 
 The generic `/api/items` and `/api/items/state` endpoints handle library queries and account-scoped state. The bulk state endpoint reuses the same server-side filters, including user ownership, source, search, media type, and view. State writes use a deterministic per-user/item primary key in `item_states`; updating `read` never changes `saved`.
 
@@ -50,7 +54,7 @@ Importing is dispatched by the small provider contract in `src/lib/sources.ts`. 
 
 ## YouTube experience
 
-Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Selecting a result imports the channel’s currently available RSS videos into Nouveautés. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. YouTube RSS does not provide the channel’s entire historical catalog, so Shelf deliberately follows forward instead of crawling older uploads through the Data API.
+Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Results support multi-selection across successive searches, then `/api/sources/batch` validates, inserts and synchronizes up to 50 channels with partial-failure reporting. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. YouTube RSS does not provide the channel’s entire historical catalog, so Shelf deliberately follows forward instead of crawling older uploads through the Data API.
 
 Optionally configure `YOUTUBE_API_KEY` with YouTube Data API v3 enabled for channel name search. Without it, the app reads public YouTube search results; YouTube can block these requests or change the page format. If search is unavailable, the dialog suggests a direct handle or channel URL.
 

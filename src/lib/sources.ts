@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
+import type { ContentType } from "./library";
 
 export type SourceSyncInput = { id: string; kind: string; feedUrl: string };
 export type NormalizedItem = {
@@ -15,7 +16,7 @@ export type NormalizedItem = {
   imageUrl?: string | null;
   publishedAt?: Date | null;
 };
-export type SourceProvider = { sync(source: SourceSyncInput): Promise<NormalizedItem[]> };
+export type SourceProvider = { contentType: Exclude<ContentType, "all">; sync(source: SourceSyncInput): Promise<NormalizedItem[]> };
 
 export function deduplicateNormalizedItems(rows: NormalizedItem[]) {
   const seen = new Set<string>();
@@ -52,10 +53,14 @@ export async function runSourceSync(
 
 const providers: Record<string, SourceProvider> = { youtube: youtubeProvider };
 
+export function getSourceProvider(kind: string) {
+  return providers[kind];
+}
+
 export async function syncSource(source: SourceSyncInput) {
   if (!db) throw new Error("Database not connected");
   const database = db;
-  const provider = providers[source.kind];
+  const provider = getSourceProvider(source.kind);
   if (!provider) throw new Error("Ce type de source ne peut pas encore être actualisé.");
   return runSourceSync(
     source,

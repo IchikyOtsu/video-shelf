@@ -1,8 +1,8 @@
-const channelIdPattern = /^UC[A-Za-z0-9_-]{22}$/;
+export const youtubeChannelIdPattern = /^UC[A-Za-z0-9_-]{22}$/;
 
 function youtubeUrl(input: string) {
   const value = input.trim();
-  if (channelIdPattern.test(value)) return `https://www.youtube.com/channel/${value}`;
+  if (youtubeChannelIdPattern.test(value)) return `https://www.youtube.com/channel/${value}`;
   if (value.startsWith("@")) return `https://www.youtube.com/${value}`;
   return /^https?:\/\//i.test(value) ? value : `https://${value}`;
 }
@@ -16,7 +16,7 @@ export async function resolveYouTubeChannel(input: string) {
   const allowedHosts = ["youtube.com", "www.youtube.com", "m.youtube.com"];
   if (!allowedHosts.includes(url.hostname)) throw new Error("Utilise une URL de chaîne YouTube.");
   const fromPath = url.pathname.match(/\/channel\/(UC[A-Za-z0-9_-]{22})/i)?.[1] || url.searchParams.get("channel_id");
-  let channelId = fromPath && channelIdPattern.test(fromPath) ? fromPath : null;
+  let channelId = fromPath && youtubeChannelIdPattern.test(fromPath) ? fromPath : null;
   let page = "";
   {
     const controller = new AbortController();
@@ -56,7 +56,7 @@ export function parseChannelResults(page: string): ChannelResult[] {
     const node = value as Record<string, unknown>;
     if (node.channelRenderer) {
       const channel = node.channelRenderer as { channelId: string; title?: { simpleText?: string; runs?: { text: string }[] }; descriptionSnippet?: { runs: { text: string }[] }; thumbnail?: { thumbnails: { url: string }[] } };
-      if (channelIdPattern.test(channel.channelId)) results.set(channel.channelId, { channelId: channel.channelId, name: text(channel.title), description: text(channel.descriptionSnippet), imageUrl: channel.thumbnail?.thumbnails.at(-1)?.url?.replace(/^\/\//, "https://") || null });
+      if (youtubeChannelIdPattern.test(channel.channelId)) results.set(channel.channelId, { channelId: channel.channelId, name: text(channel.title), description: text(channel.descriptionSnippet), imageUrl: channel.thumbnail?.thumbnails.at(-1)?.url?.replace(/^\/\//, "https://") || null });
     }
     for (const child of Object.values(node)) visit(child);
   }
@@ -66,7 +66,7 @@ export function parseChannelResults(page: string): ChannelResult[] {
 
 export async function searchYouTubeChannels(input: string): Promise<ChannelResult[]> {
   const query = input.trim();
-  if (query.startsWith("@") || channelIdPattern.test(query) || /^(https?:\/\/|(?:www\.|m\.)?youtube\.com\/)/i.test(query)) {
+  if (query.startsWith("@") || youtubeChannelIdPattern.test(query) || /^(https?:\/\/|(?:www\.|m\.)?youtube\.com\/)/i.test(query)) {
     const channel = await resolveYouTubeChannel(query);
     return [{ channelId: channel.channelId, name: channel.name || channel.channelId, imageUrl: null, description: channel.siteUrl }];
   }

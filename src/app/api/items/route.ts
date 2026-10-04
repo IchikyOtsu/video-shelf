@@ -14,13 +14,13 @@ export async function GET(request: Request) {
   let filters;
   try { filters = parseLibraryQuery(new URL(request.url).searchParams); }
   catch { return NextResponse.json({ error: "Filtres invalides." }, { status: 400 }); }
-  const { view, sourceId, offset, query, sort, mediaType } = filters;
-  const itemFilters = { view, sourceId, query, mediaType };
+  const { view, sourceId, offset, query, sort, contentType } = filters;
+  const itemFilters = { view, sourceId, query, contentType };
   const condition = buildItemCondition(itemFilters, user.id);
   const stateJoin = itemStateJoin(user.id);
   try {
     const [rows, [total], [counts]] = await Promise.all([
-      db.select({ id: items.id, title: items.title, url: items.url, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, mediaType: items.mediaType, read: itemRead, saved: itemSaved })
+      db.select({ id: items.id, title: items.title, url: items.url, summary: items.summary, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, mediaType: items.mediaType, read: itemRead, saved: itemSaved })
         .from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition)
         .orderBy(sort === "oldest" ? asc(sql`coalesce(${items.publishedAt}, ${items.createdAt})`) : desc(sql`coalesce(${items.publishedAt}, ${items.createdAt})`), asc(items.id)).limit(36).offset(offset),
       db.select({ value: sql<number>`count(*)::int` }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition),

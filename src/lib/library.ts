@@ -1,8 +1,9 @@
 export type LibraryView = "inbox" | "all" | "saved" | "archive";
+export type ContentType = "all" | "video" | "article" | "podcast";
 export type FeedItem = {
   id: string; title: string; url: string; imageUrl: string | null;
   publishedAt: string | null; sourceName: string; sourceId: string;
-  mediaType: string; sourceKind: string; read: boolean; saved: boolean;
+  summary: string | null; mediaType: string; sourceKind: string; read: boolean; saved: boolean;
 };
 export type LibraryCounts = Record<LibraryView, number>;
 export type LibraryPage = {
@@ -14,6 +15,12 @@ export const libraryViews = {
   saved: { label: "Enregistrés", icon: "♡", description: "Tes contenus enregistrés, qu’ils soient nouveaux ou déjà vus." },
   archive: { label: "Vues", icon: "✓", description: "Les contenus déjà vus, toujours disponibles dans ta bibliothèque." },
 } as const;
+export const contentTypes = {
+  all: { label: "Tous", icon: "◫" },
+  video: { label: "Vidéos", icon: "▷" },
+  article: { label: "Articles", icon: "≡" },
+  podcast: { label: "Podcasts", icon: "◉" },
+} as const;
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function parseLibraryQuery(params: URLSearchParams) {
@@ -22,9 +29,9 @@ export function parseLibraryQuery(params: URLSearchParams) {
   const offset = Number(params.get("offset") || 0);
   const sort = params.get("sort") || "newest";
   const query = (params.get("q") || "").trim();
-  const mediaType = params.get("type") || "video";
-  if (!(view in libraryViews) || !Object.hasOwn(libraryViews, view) || (sourceId && !uuidPattern.test(sourceId)) || !Number.isSafeInteger(offset) || offset < 0 || !["newest", "oldest"].includes(sort) || query.length > 200 || mediaType !== "video") throw new Error("Filtres invalides.");
-  return { view: view as LibraryView, sourceId, offset, sort, query, mediaType };
+  const contentType = params.get("type") || "all";
+  if (!(view in libraryViews) || !Object.hasOwn(libraryViews, view) || !(contentType in contentTypes) || !Object.hasOwn(contentTypes, contentType) || (sourceId && !uuidPattern.test(sourceId)) || !Number.isSafeInteger(offset) || offset < 0 || !["newest", "oldest"].includes(sort) || query.length > 200) throw new Error("Filtres invalides.");
+  return { view: view as LibraryView, sourceId, offset, sort, query, contentType: contentType as ContentType };
 }
 
 export function parseStateChange(body: unknown): { ids: string[]; read?: boolean; saved?: boolean } {
