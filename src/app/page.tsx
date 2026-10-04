@@ -53,16 +53,15 @@ function ItemGrid({ items, selected, playingId, changing, onSelect, onOpen, onSo
 }
 
 export default function Home() {
-  const initialFilters = useRef(initialFeedFilters()).current;
   const [user, setUser] = useState<User | null>();
   const [sources, setSources] = useState<Source[]>([]);
   const [page, setPage] = useState<LibraryPage>(emptyPage);
-  const [view, setView] = useState<View>(initialFilters.view);
-  const [sourceId, setSourceId] = useState(initialFilters.sourceId);
-  const [contentType, setContentType] = useState<ContentType>(initialFilters.contentType);
-  const [query, setQuery] = useState(initialFilters.query);
-  const [search, setSearch] = useState(initialFilters.query);
-  const [sort, setSort] = useState(initialFilters.sort);
+  const [view, setView] = useState<View>(() => initialFeedFilters().view);
+  const [sourceId, setSourceId] = useState(() => initialFeedFilters().sourceId);
+  const [contentType, setContentType] = useState<ContentType>(() => initialFeedFilters().contentType);
+  const [query, setQuery] = useState(() => initialFeedFilters().query);
+  const [search, setSearch] = useState(() => initialFeedFilters().query);
+  const [sort, setSort] = useState(() => initialFeedFilters().sort);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
