@@ -10,6 +10,7 @@ import { BulkActionBar } from "./components/bulk-action-bar";
 import { ItemCard } from "./components/item-card";
 import { SourceBrowser, type SourceSummary } from "./components/source-browser";
 import { YouTubePlayer } from "./components/youtube-player";
+import { AccountSettings } from "./components/account-settings";
 
 type User = { id: string; email: string; name: string | null };
 type Source = SourceSummary;
@@ -63,6 +64,7 @@ export default function Home() {
   const [search, setSearch] = useState(() => initialFeedFilters().query);
   const [sort, setSort] = useState(() => initialFeedFilters().sort);
   const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(true);
@@ -244,7 +246,7 @@ export default function Home() {
       <nav className="content-nav" aria-label="Types de contenu">{(Object.keys(contentTypes) as ContentType[]).map(type => <button key={type} className={contentType === type && view !== "sources" ? "nav-active" : ""} onClick={() => { closePlayer(); setContentType(type); setSourceId(""); setSelected(new Set()); if (view === "sources") setView("inbox"); setLoading(true); }}><span>{contentTypes[type].icon} {contentTypes[type].label}</span></button>)}</nav>
       <p className="side-label">SOURCES <span>{sources.length}</span></p>
       <nav className="content-nav" aria-label="Sources"><button className={view === "sources" ? "nav-active" : ""} aria-current={view === "sources" ? "page" : undefined} onClick={() => navigate("sources")}><span>◉ Parcourir les sources</span></button></nav>
-      <div className="account"><span>{(user.name || user.email)[0].toUpperCase()}</span><div><b>{user.name || user.email.split("@")[0]}</b><button onClick={signOut}>Se déconnecter</button></div></div>
+      <button className="account" onClick={() => setSettingsOpen(true)} aria-haspopup="dialog"><span>{(user.name || user.email)[0].toUpperCase()}</span><div><b>{user.name || user.email.split("@")[0]}</b><small>Réglages du compte</small></div><i aria-hidden="true">›</i></button>
     </aside>
     <section className="dashboard-content">
       <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1><p>{description}</p></div><button className="outline-button" disabled={refreshing || !sources.some(source => source.kind === "youtube")} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
@@ -270,5 +272,6 @@ export default function Home() {
       </>}
     </section>
     {open && <AddSource feedUrls={sources.map(source => source.feedUrl)} onClose={() => setOpen(false)} onAdded={message => { setOpen(false); navigate("inbox"); setNotice(message); setSourceRevision(value => value + 1); setFeedRevision(value => value + 1); }} />}
+    {settingsOpen && <AccountSettings onClose={() => setSettingsOpen(false)} onSignOut={() => { setSettingsOpen(false); void signOut(); }} />}
   </main>;
 }
