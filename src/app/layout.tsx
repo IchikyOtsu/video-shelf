@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Shelf",
   description: "Un agrégateur pour suivre vos sources, découvrir leurs nouveautés et retrouver vos contenus dans votre bibliothèque.",
+  icons: { icon: "/icon.svg" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
