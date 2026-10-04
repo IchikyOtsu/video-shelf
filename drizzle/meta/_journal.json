@@ -57,6 +57,13 @@
       "when": 1791122303595,
       "tag": "0007_wandering_living_tribunal",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791124100000,
+      "tag": "0008_known_electric_eel",
+      "breakpoints": true
     }
   ]
 }

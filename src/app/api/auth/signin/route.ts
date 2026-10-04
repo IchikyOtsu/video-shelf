@@ -14,5 +14,5 @@ export async function POST(request: Request) {
   if (!user || !password || !(await compare(password, user.passwordHash))) return NextResponse.json({ error: "Email or password is incorrect." }, { status: 401 });
   const publicUser = { id: user.id, name: user.name, email: user.email, sessionVersion: user.sessionVersion };
   if (user.totpEnabled) { const response = NextResponse.json({ requiresTotp: true }); response.cookies.set(pendingTotpCookieName, await createPendingTotpChallenge(publicUser), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 300 }); return response; }
-  const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email } }); response.cookies.set(cookieName, await createSession(publicUser), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 }); return response;
+  const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email }, onboardingRequired: !user.emailVerifiedAt || !user.onboardingCompletedAt }); response.cookies.set(cookieName, await createSession(publicUser), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 }); return response;
 }
