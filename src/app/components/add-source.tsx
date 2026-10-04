@@ -52,7 +52,7 @@ export function AddSource({ feedUrls, onClose, onAdded }: {
     } catch (e) { setError((e as Error).message); setSaving(false); }
   }
   return <dialog ref={dialog} className="channel-dialog" aria-labelledby="add-source-title" onCancel={event => { event.preventDefault(); if (!saving) onClose(); }} onClick={event => { if (event.target === event.currentTarget && !saving) onClose(); }}>
-    <div className="source-form source-form-batch">
+    <div className={"source-form source-form-batch " + mode}>
       <button className="close" disabled={saving} onClick={onClose} aria-label="Fermer">×</button>
       <div><span className="eyebrow">AJOUTER DES SOURCES</span><h2 id="add-source-title">Qu’aimerais-tu suivre ?</h2></div>
       <div className="provider-tabs" role="tablist" aria-label="Type de source"><button role="tab" aria-selected={mode === "youtube"} onClick={() => setMode("youtube")}>▷ YouTube</button><button role="tab" aria-selected={mode === "rss"} onClick={() => setMode("rss")}>≡ RSS / Atom</button></div>
@@ -68,7 +68,7 @@ export function AddSource({ feedUrls, onClose, onAdded }: {
           <span><b>{result.name}</b><small>{added ? "Déjà dans tes sources" : result.description || "Chaîne YouTube"}</small></span>
         </label>;
       })}</div>
-      {searched && !results.length ? <p>Aucune chaîne trouvée. Essaie un autre nom ou son lien YouTube.</p> : null}</> : <><div className="provider-choice"><span>≡</span><div><b>RSS / Atom</b><small>Ajoute un flux de site, d’articles ou de podcast</small></div></div><label htmlFor="rss-url">URL du flux</label><input id="rss-url" type="url" value={feedUrl} disabled={saving} placeholder="https://exemple.com/feed.xml" onChange={event => setFeedUrl(event.target.value)} required /><label htmlFor="rss-name">Nom de la source <small>(facultatif)</small></label><input id="rss-name" type="text" value={sourceName} disabled={saving} placeholder="Déduit automatiquement du flux" onChange={event => setSourceName(event.target.value)} /></>}
+      {searched && !results.length ? <p>Aucune chaîne trouvée. Essaie un autre nom ou son lien YouTube.</p> : null}</> : <><div className="provider-choice"><span>≡</span><div><b>RSS / Atom</b><small>Ajoute un flux de site, d’articles ou de podcast</small></div></div><label htmlFor="rss-url">URL du flux</label><input id="rss-url" type="url" value={feedUrl} disabled={saving} placeholder="https://exemple.com/feed.xml" onChange={event => setFeedUrl(event.target.value)} required /><label htmlFor="rss-name">Nom de la source <small>(facultatif)</small></label><input id="rss-name" type="text" value={sourceName} disabled={saving} placeholder="Déduit automatiquement du flux" onChange={event => setSourceName(event.target.value)} />{error && <p className="form-error" role="alert">{error}</p>}</>}
       <div className="source-dialog-footer"><span>{mode === "youtube" ? selected.size + " sélectionnée" + (selected.size > 1 ? "s" : "") : "Le flux sera vérifié avant l’ajout"}</span><button className="dark-button" disabled={saving || (mode === "youtube" ? !selected.size : !feedUrl.trim())} onClick={add}>{saving ? "Ajout et synchronisation…" : mode === "youtube" ? "Ajouter " + selected.size + " source" + (selected.size > 1 ? "s" : "") : "Ajouter le flux"}</button></div>
     </div>
   </dialog>;

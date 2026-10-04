@@ -249,13 +249,14 @@ a { color:inherit; }
 .source-group { margin-top:16px; }
 .source-group-heading { display:grid; grid-template-columns:1fr auto auto; align-items:center; gap:14px; width:100%; padding:14px 4px; border:0; border-bottom:1px solid var(--line); background:transparent; color:var(--ink); text-align:left; font-weight:700; }
 .source-group-heading small { min-width:24px; padding:3px 7px; border-radius:10px; background:#e8eadf; color:#5f684f; text-align:center; }
-.provider-tabs { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; }
+.provider-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
 .provider-tabs button { display:grid; gap:3px; padding:10px 7px; border:1px solid var(--line); border-radius:8px; background:transparent; color:var(--muted); font-size:11px; }
 .provider-tabs button[aria-selected="true"] { border-color:#738060; background:#edf0e5; color:#3f4d34; }
 .provider-tabs small { font-size:8px; text-transform:uppercase; letter-spacing:.7px; }
 .source-form-batch { display:flex; flex-direction:column; max-height:90dvh; overflow:hidden; }
 .source-form-batch .channel-results { min-height:0; flex:1 1 auto; }
-.source-dialog-footer { position:sticky; bottom:0; display:flex; align-items:center; justify-content:space-between; gap:15px; margin:2px -36px -36px; padding:16px 36px; border-top:1px solid var(--line); background:var(--paper); font-size:12px; }
+.source-dialog-footer { position:static; flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:15px; margin:16px -36px -36px; padding:16px 36px; border-top:1px solid var(--line); background:var(--paper); font-size:12px; }
+.source-form-batch.rss .source-dialog-footer { margin-top:auto; }
 .channel-result.already-added { opacity:.65; }
 @media(max-width:760px) {
   .main-nav { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); overflow:visible; gap:4px; }
@@ -273,6 +274,6 @@ a { color:inherit; }
   .source-actions .outline-button,.source-actions .quiet-button { font-size:12px; }
   .selection-bar { align-items:flex-start; flex-direction:column; }
   .selection-bar>div { width:100%; }
-  .source-dialog-footer { margin:2px -22px -30px; padding:14px 22px; }
+  .source-dialog-footer { margin:16px -22px -30px; padding:14px 22px; }
   .source-dialog-footer .dark-button { padding:10px; }
 }
