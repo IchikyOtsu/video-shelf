@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseLibraryQuery, parseStateChange } from "./library";
+import { groupInboxItems, parseLibraryQuery, parseStateChange, type FeedItem } from "./library";
 const id = "11111111-1111-4111-8111-111111111111";
 test("the inbox is the default, with server-side history pagination", () => {
   assert.equal(parseLibraryQuery(new URLSearchParams()).view, "inbox");
@@ -15,10 +15,23 @@ test("invalid filters cannot reach the database", () => {
     assert.throws(() => parseLibraryQuery(new URLSearchParams(params)), /invalides/);
   }
 });
-test("archive and save changes are independent and deduplicate targets", () => {
+test("seen and saved changes are independent and deduplicate targets", () => {
   assert.deepEqual(parseStateChange({ ids: [id, id], read: false }), { ids: [id], read: false });
   assert.deepEqual(parseStateChange({ ids: [id], saved: true }), { ids: [id], saved: true });
+  assert.deepEqual({ saved: true, ...parseStateChange({ ids: [id], read: true }) }, { saved: true, ids: [id], read: true });
 });
 test("state changes reject empty, malformed or unbounded payloads", () => {
   for (const body of [null, {}, { ids: [], read: true }, { ids: [id] }, { ids: ["bad"], saved: true }, { ids: [id], read: "true" }, { ids: Array(101).fill(id), saved: true }]) assert.throws(() => parseStateChange(body), /invalide/);
+});
+
+test("the inbox groups rendered items by the browser-local publication day", () => {
+  const item = (id: string, publishedAt: string): FeedItem => ({ id, publishedAt, title: id, url: "https://example.com", imageUrl: null, sourceName: "Source", sourceId: id, sourceKind: "youtube", mediaType: "video", read: false, saved: false });
+  const groups = groupInboxItems([
+    item("today", "2026-10-04T15:00:00+02:00"),
+    item("yesterday", "2026-10-03T11:00:00+02:00"),
+    item("older", "2026-09-01T11:00:00+02:00"),
+  ], new Date("2026-10-04T18:00:00+02:00"));
+  assert.deepEqual(groups.map(group => [group.label, group.items.map(value => value.id)]), [
+    ["Aujourd’hui", ["today"]], ["Hier", ["yesterday"]], ["Plus ancien", ["older"]],
+  ]);
 });

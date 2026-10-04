@@ -10,5 +10,5 @@ export async function GET(request: Request) {
   if (!db) return new NextResponse("Database not connected", { status: 503 });
   const allSources = await db.select({ id: sources.id, feedUrl: sources.feedUrl, kind: sources.kind }).from(sources).where(and(eq(sources.active, true), eq(sources.kind, "youtube")));
   const results = await Promise.allSettled(allSources.map(syncSource));
-  return NextResponse.json({ synced: results.filter(result => result.status === "fulfilled").length, imported: results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0) });
+  return NextResponse.json({ synced: results.filter(result => result.status === "fulfilled").length, failed: results.filter(result => result.status === "rejected").length, imported: results.reduce((total, result) => total + (result.status === "fulfilled" ? result.value : 0), 0) });
 }

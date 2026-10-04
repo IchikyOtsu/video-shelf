@@ -41,7 +41,7 @@ export function AddSource({ feedUrls, onClose, onAdded }: {
       const data = await request("/api/sources", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         name: selected.name, feedUrl: "https://www.youtube.com/channel/" + selected.channelId, kind: "youtube", category: "Vidéos",
       }) });
-      onAdded(selected.name + " ajoutée. " + (data.imported ? data.imported + " vidéos dans ta boîte de réception." : "Aucune vidéo récupérée pour le moment. Tu peux réessayer depuis Sources."));
+      onAdded(selected.name + " ajoutée. " + (data.imported ? data.imported + " vidéos dans Nouveautés." : "Aucune vidéo récupérée pour le moment. Tu peux réessayer depuis Sources."));
     } catch (e) { setError((e as Error).message); setSaving(false); }
   }
   return <dialog ref={dialog} className="channel-dialog" aria-labelledby="add-source-title" onCancel={event => { event.preventDefault(); if (!saving) onClose(); }} onClick={event => { if (event.target === event.currentTarget && !saving) onClose(); }}>

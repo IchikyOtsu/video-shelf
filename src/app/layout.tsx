@@ -17,7 +17,7 @@ export const metadata: Metadata = {
   description: "Un agrégateur pour suivre vos sources, découvrir leurs nouveautés et retrouver vos contenus dans votre bibliothèque.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="fr"

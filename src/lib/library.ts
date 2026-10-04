@@ -9,10 +9,10 @@ export type LibraryPage = {
   items: FeedItem[]; total: number; nextOffset: number | null; counts: LibraryCounts;
 };
 export const libraryViews = {
-  inbox: { label: "Boîte de réception", icon: "▣", description: "Les nouvelles vidéos de tes sources, à découvrir à ton rythme." },
+  inbox: { label: "Nouveautés", icon: "▣", description: "Les contenus que tu n’as pas encore vus, à découvrir à ton rythme." },
   all: { label: "Bibliothèque", icon: "▤", description: "Tous les contenus collectés, des dernières nouveautés aux anciens flux." },
-  saved: { label: "À retrouver", icon: "♡", description: "Tes contenus enregistrés, toujours à portée de main." },
-  archive: { label: "Archives", icon: "✓", description: "Les vidéos déjà traitées. Elles restent disponibles dans ta bibliothèque." },
+  saved: { label: "Enregistrés", icon: "♡", description: "Tes contenus enregistrés, qu’ils soient nouveaux ou déjà vus." },
+  archive: { label: "Vues", icon: "✓", description: "Les contenus déjà vus, toujours disponibles dans ta bibliothèque." },
 } as const;
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -35,4 +35,24 @@ export function parseStateChange(body: unknown): { ids: string[]; read?: boolean
     (value.read !== undefined && typeof value.read !== "boolean") ||
     (value.saved !== undefined && typeof value.saved !== "boolean")) throw new Error("Modification invalide.");
   return { ids: [...new Set(value.ids as string[])], ...(value.read !== undefined ? { read: value.read as boolean } : {}), ...(value.saved !== undefined ? { saved: value.saved as boolean } : {}) };
+}
+
+export type InboxGroup = { label: "Aujourd’hui" | "Hier" | "Plus ancien"; items: FeedItem[] };
+
+export function groupInboxItems(items: FeedItem[], now = new Date()): InboxGroup[] {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterday = today - 24 * 60 * 60 * 1000;
+  const groups: InboxGroup[] = [
+    { label: "Aujourd’hui", items: [] },
+    { label: "Hier", items: [] },
+    { label: "Plus ancien", items: [] },
+  ];
+  for (const item of items) {
+    const published = item.publishedAt ? new Date(item.publishedAt) : null;
+    const day = published && !Number.isNaN(published.getTime())
+      ? new Date(published.getFullYear(), published.getMonth(), published.getDate()).getTime()
+      : Number.NEGATIVE_INFINITY;
+    groups[day >= today ? 0 : day >= yesterday ? 1 : 2].items.push(item);
+  }
+  return groups.filter(group => group.items.length);
 }
