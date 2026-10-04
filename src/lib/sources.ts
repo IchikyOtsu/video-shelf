@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { itemStates, items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
+import { rssProvider } from "./rss";
 import type { ContentType } from "./library";
 
 export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
@@ -9,6 +10,7 @@ export type NormalizedItem = {
   guid: string;
   title: string;
   url: string;
+  audioUrl?: string | null;
   summary?: string | null;
   author?: string | null;
   mediaType: string;
@@ -55,7 +57,7 @@ export async function runSourceSync(
   }
 }
 
-const providers: Record<string, SourceProvider> = { youtube: youtubeProvider };
+const providers: Record<string, SourceProvider> = { youtube: youtubeProvider, rss: rssProvider };
 
 export function getSourceProvider(kind: string) {
   return providers[kind];
