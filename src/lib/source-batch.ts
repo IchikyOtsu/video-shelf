@@ -1,6 +1,6 @@
 import { youtubeChannelIdPattern } from "./youtube";
 
-export type YouTubeBatchInput = { kind: "youtube"; channelId: string; name: string };
+export type YouTubeBatchInput = { kind: "youtube"; channelId: string; name: string; imageUrl?: string | null };
 export type YouTubeCandidate = YouTubeBatchInput & { feedUrl: string; siteUrl: string; contentType: "video" };
 export type BatchFailure = { channelId?: string; name?: string; error: string; added?: boolean };
 
@@ -14,13 +14,14 @@ export function parseYouTubeBatch(body: unknown) {
     const source = value && typeof value === "object" ? value as Record<string, unknown> : {};
     const channelId = typeof source.channelId === "string" ? source.channelId.trim() : "";
     const name = typeof source.name === "string" ? source.name.trim().slice(0, 200) : "";
+    const imageUrl = typeof source.imageUrl === "string" && /^https:\/\//.test(source.imageUrl) ? source.imageUrl.slice(0, 1000) : null;
     if (source.kind !== "youtube" || !youtubeChannelIdPattern.test(channelId) || !name) {
       failed.push({ channelId: channelId || undefined, name: name || undefined, error: "Chaîne YouTube invalide." });
       continue;
     }
     if (seen.has(channelId)) continue;
     seen.add(channelId);
-    candidates.push({ kind: "youtube", channelId, name, contentType: "video", feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, siteUrl: `https://www.youtube.com/channel/${channelId}` });
+    candidates.push({ kind: "youtube", channelId, name, imageUrl, contentType: "video", feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`, siteUrl: `https://www.youtube.com/channel/${channelId}` });
   }
   return { candidates, failed };
 }

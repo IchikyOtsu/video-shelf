@@ -38,7 +38,7 @@ export function AddSource({ feedUrls, onClose, onAdded }: {
     if (!selected.size || saving) return;
     setSaving(true); setError("");
     try {
-      const data = await request("/api/sources/batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sources: [...selected.values()].map(source => ({ kind: "youtube", channelId: source.channelId, name: source.name })) }) });
+      const data = await request("/api/sources/batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sources: [...selected.values()].map(source => ({ kind: "youtube", channelId: source.channelId, name: source.name, imageUrl: source.imageUrl })) }) });
       const addedCount = data.added.length + data.failed.filter((failure: { added?: boolean }) => failure.added).length;
       onAdded(addedCount + " source(s) ajoutée(s) · " + data.imported + " nouveau(x) contenu(s)." + (data.alreadyExisting.length ? " " + data.alreadyExisting.length + " déjà suivie(s)." : "") + (data.failed.length ? " " + data.failed.length + " erreur(s) à vérifier dans Sources." : ""));
     } catch (e) { setError((e as Error).message); setSaving(false); }

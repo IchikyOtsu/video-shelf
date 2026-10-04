@@ -40,7 +40,8 @@ export async function resolveYouTubeChannel(input: string) {
   }
   if (!channelId) throw new Error("Impossible de trouver le flux de cette chaîne. Essaie l’URL youtube.com/@nom ou youtube.com/channel/UC…");
   const title = page.match(/<meta property="og:title" content="([^"]+)"/i)?.[1];
-  return { channelId, name: title ? decodeHtml(title) : null, siteUrl: `https://www.youtube.com/channel/${channelId}`, feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}` };
+  const image = page.match(/<meta property="og:image" content="([^"]+)"/i)?.[1];
+  return { channelId, name: title ? decodeHtml(title) : null, imageUrl: image?.startsWith("https://") ? decodeHtml(image) : null, siteUrl: `https://www.youtube.com/channel/${channelId}`, feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}` };
 }
 
 export type ChannelResult = { channelId: string; name: string; imageUrl: string | null; description: string };
@@ -68,7 +69,7 @@ export async function searchYouTubeChannels(input: string): Promise<ChannelResul
   const query = input.trim();
   if (query.startsWith("@") || youtubeChannelIdPattern.test(query) || /^(https?:\/\/|(?:www\.|m\.)?youtube\.com\/)/i.test(query)) {
     const channel = await resolveYouTubeChannel(query);
-    return [{ channelId: channel.channelId, name: channel.name || channel.channelId, imageUrl: null, description: channel.siteUrl }];
+    return [{ channelId: channel.channelId, name: channel.name || channel.channelId, imageUrl: channel.imageUrl, description: channel.siteUrl }];
   }
   if (process.env.YOUTUBE_API_KEY) {
     const url = new URL("https://www.googleapis.com/youtube/v3/search");

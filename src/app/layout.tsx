@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Shelf — vos flux, à votre rythme",
+  title: "Shelf",
   description: "Un agrégateur pour suivre vos sources, découvrir leurs nouveautés et retrouver vos contenus dans votre bibliothèque.",
 };
 

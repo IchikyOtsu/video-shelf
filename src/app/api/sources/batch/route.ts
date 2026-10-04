@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     const existing = await db.select({ feedUrl: sources.feedUrl, name: sources.name }).from(sources).where(and(eq(sources.userId, user.id), inArray(sources.feedUrl, feedUrls)));
     const existingFeeds = new Set(existing.map(source => source.feedUrl));
     const fresh = candidates.filter(source => !existingFeeds.has(source.feedUrl));
-    const inserted = fresh.length ? await db.insert(sources).values(fresh.map(source => ({ userId: user.id, name: source.name, feedUrl: source.feedUrl, siteUrl: source.siteUrl, kind: source.kind, contentType: source.contentType, category: "Non classé" }))).onConflictDoNothing().returning() : [];
+    const inserted = fresh.length ? await db.insert(sources).values(fresh.map(source => ({ userId: user.id, name: source.name, feedUrl: source.feedUrl, siteUrl: source.siteUrl, imageUrl: source.imageUrl, kind: source.kind, contentType: source.contentType, category: "Non classé" }))).onConflictDoNothing().returning() : [];
     const insertedFeeds = new Set(inserted.map(source => source.feedUrl));
     const alreadyExisting = candidates.filter(source => existingFeeds.has(source.feedUrl) || !insertedFeeds.has(source.feedUrl)).map(source => ({ channelId: source.channelId, name: source.name }));
     const synced = await syncBatchSources(inserted, source => syncSource(source, { initialImport: true }));

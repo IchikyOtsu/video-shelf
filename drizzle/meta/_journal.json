@@ -64,6 +64,13 @@
       "when": 1791124100000,
       "tag": "0008_known_electric_eel",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791126213722,
+      "tag": "0009_bitter_frightful_four",
+      "breakpoints": true
     }
   ]
 }
