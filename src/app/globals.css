@@ -123,6 +123,7 @@ a { color:inherit; }
 .login-home section>p:not(.eyebrow) { color:var(--muted); line-height:1.8; margin:24px 0 30px; }
 .auth-page { min-height:100vh; background:var(--cream); display:grid; place-items:center; padding:24px; }
 .auth-card { width:min(420px,100%); padding:42px; background:var(--paper); border:1px solid var(--line); border-radius:14px; }
+.onboarding-card { width:min(680px,100%); padding:42px; background:var(--paper); border:1px solid var(--line); border-radius:14px; }.onboarding-card h1 { margin:7px 0; font:34px Georgia,serif; }.onboarding-card>p { color:var(--muted); font-size:13px; line-height:1.6; }.onboarding-step { display:flex; justify-content:space-between; align-items:center; gap:18px; padding:20px 0; border-top:1px solid var(--line); }.onboarding-step h2 { margin:0 0 6px; font:19px Georgia,serif; }.onboarding-step p,.onboarding-step b { display:block; margin:0; color:var(--muted); font-size:12px; line-height:1.5; }.onboarding-actions { display:flex; align-items:center; gap:14px; margin-top:24px; }.signup-note { margin:6px 0 0; color:var(--muted); font-size:11px; line-height:1.6; }
 .auth-card .brand { margin-bottom:38px; }
 .auth-card h1 { font:32px Georgia,serif; margin:0 0 8px; }
 .auth-card>p { color:var(--muted); font-size:13px; line-height:1.6; margin:0 0 26px; }
@@ -169,6 +170,7 @@ a { color:inherit; }
   .watch-details h2 { font-size:17px; }
   .watch-actions a { margin-left:0; }
   .login-home h1 { font-size:46px; }
+  .onboarding-card { padding:28px 20px; }.onboarding-step { align-items:flex-start; flex-direction:column; }.onboarding-actions { align-items:stretch; flex-direction:column; }.onboarding-actions button { width:100%; }
   .settings-overlay { align-items:stretch; }.settings-sheet { width:100%; border-left:0; }.settings-sheet>header { padding-inline:20px; }.settings-body { padding-inline:20px; }.totp-row { align-items:flex-start; flex-direction:column; }.totp-row>div:last-child { flex-wrap:wrap; }
 }
 @media(max-width:380px) { .video-grid { grid-template-columns:1fr; } .dashboard-content { padding-inline:14px; } }

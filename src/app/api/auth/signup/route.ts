@@ -15,5 +15,5 @@ export async function POST(request: Request) {
   const [user] = await db.insert(users).values({ name: name?.trim() || null, email: email.toLowerCase(), passwordHash: await hash(password, 12) }).returning({ id: users.id, name: users.name, email: users.email, sessionVersion: users.sessionVersion });
   const token = createOpaqueToken(); await db.insert(emailVerificationTokens).values({ userId: user.id, tokenHash: tokenHash(token), expiresAt: new Date(Date.now() + 24 * 60 * 60_000) });
   const verificationEmailSent = await sendVerificationEmail(user.email, token).catch(() => false);
-  const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email }, verificationEmailSent }); response.cookies.set(cookieName, await createSession(user), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 }); return response;
+  const response = NextResponse.json({ user: { id: user.id, name: user.name, email: user.email }, verificationEmailSent, onboardingRequired: true }); response.cookies.set(cookieName, await createSession(user), { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 60 * 60 * 24 * 30 }); return response;
 }
