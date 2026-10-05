@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { items, itemStates, sources } from "@/db/schema";
 import { cookieName, readSession } from "@/lib/auth";
 import { buildItemCondition, itemDateOrder, itemRead, itemSaved, itemStateJoin } from "@/lib/item-query";
+import { articleContent, articlePreview } from "@/lib/article-content";
 import { parseLibraryQuery } from "@/lib/library";
 
 export async function GET(request: Request) {
@@ -20,7 +21,7 @@ export async function GET(request: Request) {
   const stateJoin = itemStateJoin(user.id);
   try {
     const [rows, [total], [counts]] = await Promise.all([
-      db.select({ id: items.id, title: items.title, url: items.url, audioUrl: items.audioUrl, summary: items.summary, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, mediaType: items.mediaType, read: itemRead, saved: itemSaved, progressSeconds: sql<number>`coalesce(${itemStates.progressSeconds}, 0)::int`, durationSeconds: itemStates.durationSeconds, lastPlayedAt: itemStates.lastPlayedAt })
+      db.select({ id: items.id, title: items.title, url: items.url, audioUrl: items.audioUrl, summary: items.summary, author: items.author, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, sourceFeedUrl: sources.feedUrl, mediaType: items.mediaType, read: itemRead, saved: itemSaved, progressSeconds: sql<number>`coalesce(${itemStates.progressSeconds}, 0)::int`, durationSeconds: itemStates.durationSeconds, lastPlayedAt: itemStates.lastPlayedAt })
         .from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition)
         .orderBy(itemDateOrder(sort), asc(items.id)).limit(36).offset(offset),
       db.select({ value: sql<number>`count(*)::int` }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition),
@@ -31,7 +32,13 @@ export async function GET(request: Request) {
         saved: sql<number>`count(*) filter (where ${itemSaved})::int`,
       }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(buildItemCondition({ ...itemFilters, view: "all", sourceId: "", query: "" }, user.id)),
     ]);
-    return NextResponse.json({ items: rows, total: total.value, nextOffset: offset + rows.length < total.value ? offset + rows.length : null, counts });
+    const previews = rows.map(({ sourceFeedUrl, ...item }) => {
+      if (item.mediaType === "video") return item;
+      const preview = articlePreview(item.summary, item.url, item.imageUrl, sourceFeedUrl);
+      return { ...item, ...preview, readingMinutes: item.mediaType === "article" ? preview.readingMinutes : null,
+        author: item.author ? articleContent(item.author, item.url).text : null };
+    });
+    return NextResponse.json({ items: previews, total: total.value, nextOffset: offset + rows.length < total.value ? offset + rows.length : null, counts });
   } catch {
     return NextResponse.json({ error: "Impossible de charger les flux. Réessaie." }, { status: 503 });
   }

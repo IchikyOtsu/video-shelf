@@ -52,6 +52,14 @@ The generic `/api/items` and `/api/items/state` endpoints handle library queries
 
 Importing is dispatched by the small provider contract in `src/lib/sources.ts`. A provider fetches and returns normalized items; the generic sync layer deduplicates and persists them, then records `lastSyncedAt` or a short `lastSyncError` on the source. This keeps library and item-state behavior independent from providers and leaves a contained path for future article or podcast feeds.
 
+## Articles and RSS artwork
+
+Article cards show publisher artwork, a clean excerpt, author, publication date, read/unread state and a direct “Lire l’article” link. On narrow screens articles span the grid width. Images load lazily without a referrer; missing/broken images fall back to the source initial and domain. Opening an article does not automatically mark it read; the explicit action says “Marquer comme lu”. Reading estimates appear only for at least 200 words of available feed text and are labelled as estimates based on that text, which may be shorter than the full article.
+
+RSS/Atom artwork is extracted from Media RSS thumbnails/content/groups, image enclosures, iTunes artwork, direct image fields, or the first useful inline image. Relative and lazy/responsive images are supported; tiny tracking pixels, non-image media and unsafe URL schemes are excluded. Feed artwork is the final item fallback and is saved as the source avatar for newly added RSS sources. Image attachments do not misclassify articles as podcasts. Atom publication timestamps take precedence over modification timestamps.
+
+Publisher HTML stays inert in storage. The items API produces decoded plain-text excerpts (up to 320 characters) and strips script/style/template content. Legacy HTML summaries are also cleaned immediately; legacy image values incorrectly pointing at the feed itself are ignored so embedded artwork can be recovered. Synchronizing existing feed entries refreshes their persisted metadata. No article page scraping, image proxy requests, or database migration is required; feeds without artwork use the visual fallback.
+
 ## YouTube experience
 
 Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Results support multi-selection across successive searches, then `/api/sources/batch` validates, inserts and synchronizes up to 50 channels with partial-failure reporting. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. A new source imports one page of recent videos. Later API syncs follow additional pages only until encountering the first source-owned, already-known video (or reaching the end), so more than 50 publications between syncs are not silently missed. Known videos in the boundary page are included for metadata refresh; unknown videos older than the boundary are not imported.
