@@ -24,7 +24,9 @@ export const contentTypes = {
 } as const;
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function parseLibraryQuery(params: URLSearchParams) {
+export type LibraryQuery = { view: LibraryView; sourceId: string; offset: number; sort: "newest" | "oldest"; query: string; contentType: ContentType };
+
+export function parseLibraryQuery(params: URLSearchParams): LibraryQuery {
   const view = params.get("view") || "inbox";
   const sourceId = params.get("source") || "";
   const offset = Number(params.get("offset") || 0);
