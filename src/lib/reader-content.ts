@@ -6,7 +6,7 @@ const blocked = ["script", "style", "iframe", "object", "embed", "svg", "math", 
 export function sanitizeArticleHtml(input: string, base: string): string {
   return sanitizeHtml(input, {
     allowedTags: ["p", "br", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "a", "blockquote", "strong", "em", "b", "i", "u", "s", "del", "pre", "code", "hr", "figure", "figcaption", "img", "table", "thead", "tbody", "tr", "th", "td", "div", "span", "sup", "sub"],
-    allowedAttributes: { a: ["href", "title", "target", "rel"], img: ["src", "alt", "loading", "decoding", "referrerpolicy"] },
+    allowedAttributes: { a: ["href", "title", "target", "rel"], img: ["src", "alt", "title", "loading", "decoding", "referrerpolicy"] },
     allowedSchemes: ["http", "https"], allowProtocolRelative: false, nonTextTags: blocked,
     transformTags: {
       "*": (tagName, attrs) => ({ tagName: Object.hasOwn(attrs, "hidden") || /(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test(attrs.style || "") ? "template" : tagName, attribs: attrs }),
@@ -18,7 +18,7 @@ export function sanitizeArticleHtml(input: string, base: string): string {
         }).sort((a, b) => b.size - a.size);
         const src = hidden ? null : [attrs["data-src"], attrs["data-lazy-src"], ...variants.map(value => value.src), attrs.src].map(value => contentUrl(value, base)).find(Boolean);
         const tracking = src && /(?:^|[\/_.-])(?:pixel|tracking|beacon|spacer)(?:[\/_.?-]|$)/i.test(new URL(src).pathname);
-        return { tagName: "img", attribs: { src: !tracking && src || "", alt: attrs.alt || "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" } };
+        return { tagName: "img", attribs: { src: !tracking && src || "", alt: attrs.alt || "", title: attrs.title || "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" } };
       },
     },
     exclusiveFilter: frame => frame.tag === "img" && !frame.attribs.src,
@@ -29,5 +29,17 @@ export function readerContent(item: { contentHtml?: string | null; summary: stri
   const useful = (html: string) => Boolean(articleContent(html, item.url).text || /<img\s/.test(html));
   if (useful(full)) return { html: full, kind: "full" };
   const summary = sanitizeArticleHtml(item.summary || "", item.url);
-  return useful(summary) ? { html: summary, kind: "summary" } : { html: "", kind: "missing" };
+  if (!useful(summary)) return { kind: "missing", html: "" };
+  // xkcd publishes the complete comic in RSS description, without content:encoded.
+  // Do not infer that arbitrary descriptions or thumbnail images are full articles.
+  try {
+    const url = new URL(item.url);
+    const comicPage = ["xkcd.com", "www.xkcd.com"].includes(url.hostname) && /^\/\d+\/?$/.test(url.pathname);
+    const comicImage = articleContent(summary, item.url).images.some(src => {
+      const image = new URL(src);
+      return image.hostname === "imgs.xkcd.com" && image.pathname.startsWith("/comics/");
+    });
+    if (comicPage && comicImage) return { html: summary, kind: "full" };
+  } catch { /* Generic excerpts remain excerpts. */ }
+  return { html: summary, kind: "summary" };
 }

@@ -38,3 +38,22 @@ test("media dispatch preserves YouTube and routes RSS content to internal reader
   assert.deepEqual(itemOpening({ mediaType: "podcast", url: "https://pod.test/ep", audioUrl: "https://pod.test/ep.mp3" }), { kind: "podcast", audioUrl: "https://pod.test/ep.mp3" });
   for (const audioUrl of [null, "javascript:alert(1)", "https://user:secret@pod.test/ep.mp3"]) assert.equal(itemOpening({ mediaType: "podcast", url: "https://pod.test/ep", audioUrl }).kind, "external");
 });
+
+test("xkcd descriptions contain complete comics, including already imported legacy entries", () => {
+  const [item] = parseRssOrAtom('<rss><channel><title>xkcd</title><item><guid>https://xkcd.com/3149/</guid><link>https://xkcd.com/3149/</link><description><![CDATA[<img src="https://imgs.xkcd.com/comics/ground_effect.png" title="A comic caption" alt="Ground Effect">]]></description></item></channel></rss>', 'https://xkcd.com/rss.xml').items;
+  assert.equal(item.mediaType,"article"); assert.equal(item.contentHtml,null);
+  assert.equal(item.imageUrl,"https://imgs.xkcd.com/comics/ground_effect.png");
+  const result=readerContent({...item,summary:item.summary || null});
+  assert.equal(result.kind,"full"); assert.ok(result.html.includes('title="A comic caption"'));
+});
+test("HN link roundups and unrelated image descriptions remain excerpts", () => {
+  const hn=readerContent({url:"https://blog.example.com/article",summary:'<p>Article URL: <a href="https://blog.example.com/article">Article</a></p><p>Comments URL: <a href="https://news.ycombinator.com/item?id=1">Comments</a></p><p>Points: 5</p>'});
+  assert.equal(hn.kind,"summary");
+  assert.equal(readerContent({url:"https://news.example.com/article",summary:'<img src="https://imgs.xkcd.com/comics/comic.png">'}).kind,"summary");
+  assert.equal(readerContent({url:"https://xkcd.com.evil.example/3149/",summary:'<img src="https://imgs.xkcd.com/comics/comic.png">'}).kind,"summary");
+  assert.equal(readerContent({url:"https://xkcd.com/3149/",summary:'<img src="https://other.example/thumb.jpg">'}).kind,"summary");
+});
+test("Steam full patch notes need no image to be a readable full article", () => {
+  const [item]=parseRssOrAtom('<rss><channel><title>Steam</title><item><guid>patch</guid><link>https://store.steampowered.com/news/1</link><content:encoded><![CDATA[<p>Update released.</p><ul><li>Fixed an issue.</li></ul>]]></content:encoded></item></channel></rss>','https://store.steampowered.com/feeds/news.xml').items;
+  assert.equal(item.imageUrl,null); assert.equal(readerContent({...item,summary:item.summary || null}).kind,"full");
+});

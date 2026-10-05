@@ -86,7 +86,7 @@ export function ArticleReader({ item, suppressAutoSeen, onStart, onProgress, onC
   const date = parsedDate && !Number.isNaN(parsedDate.getTime()) ? new Intl.DateTimeFormat("fr-BE", { dateStyle:"long" }).format(parsedDate) : "";
   const image = safeMediaUrl(item.imageUrl);
   return <article className="article-reader-shell" style={{ "--reader-size":preferences.size + "px", "--reader-font":preferences.font === "sans" ? "Arial, Helvetica, sans-serif" : "Georgia, serif", "--reader-width":preferences.width === "wide" ? "900px" : "680px" } as CSSProperties}>
-    <div className="reader-toolbar"><span>{percent}% lu</span><button className="outline-button" aria-expanded={settingsOpen} aria-controls="reader-settings" onClick={() => setSettingsOpen(value => !value)}>Aa <span>Lecture</span></button></div>
+    <div className="reader-toolbar"><span>{content?.kind === "full" ? `${percent}% lu` : content?.kind === "summary" ? "Extrait du flux" : failed || content?.kind === "missing" ? "Contenu indisponible" : "Chargement…"}</span><button className="outline-button" aria-expanded={settingsOpen} aria-controls="reader-settings" onClick={() => setSettingsOpen(value => !value)}>Aa <span>Lecture</span></button></div>
     {settingsOpen && <div id="reader-settings" className="reader-settings">
       <label>Taille du texte <span>{preferences.size}px</span><input type="range" min={16} max={24} value={preferences.size} onChange={event => configure({ ...preferences, size:Number(event.target.value) })} /></label>
       <label>Police<select value={preferences.font} onChange={event => configure({ ...preferences, font:event.target.value === "sans" ? "sans" : "serif" })}><option value="serif">Avec empattements</option><option value="sans">Sans empattements</option></select></label>
@@ -101,6 +101,6 @@ export function ArticleReader({ item, suppressAutoSeen, onStart, onProgress, onC
       {content?.html && <div className="reader-prose" dangerouslySetInnerHTML={{ __html:content.html }} />}
       <a className="reader-source-link" href={safeMediaUrl(item.url) || undefined} target="_blank" rel="noopener noreferrer">Lire sur le site de la source ↗</a>
     </div></div>
-    <div className="reader-progress" role="progressbar" aria-label="Progression de lecture" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width:percent + "%" }} /></div>
+    {content?.kind === "full" && <div className="reader-progress" role="progressbar" aria-label="Progression de lecture" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width:percent + "%" }} /></div>}
   </article>;
 }
