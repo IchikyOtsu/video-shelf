@@ -2,6 +2,7 @@ import { XMLParser } from "fast-xml-parser";
 import type { NormalizedItem, SourceProvider } from "./sources";
 import { fetchYouTubeFeedWithFallback, youtubeFeedChannelId } from "./youtube-fallback";
 import { youtubeApiClient, YouTubeApiCooldownError } from "./youtube-api";
+import { checkSyncDeadline, SourceSyncDeferredError } from "./sync-control";
 import { SourceFetchError } from "./source-fetch";
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false });
@@ -47,20 +48,28 @@ export function parseYouTubeFeed(xml: string): NormalizedItem[] {
 
 export const youtubeProvider: SourceProvider = {
   contentType: "video",
-  async sync(source) {
+  async sync(source, context = {}) {
+    checkSyncDeadline(context.deadlineMs);
     const apiKey = process.env.YOUTUBE_API_KEY;
     const channelId = youtubeFeedChannelId(source.feedUrl);
     if (apiKey && channelId) {
       const started = performance.now();
-      try { return await youtubeApiClient(apiKey).sync(channelId); }
+      try { return await youtubeApiClient(apiKey).sync(channelId, context); }
       catch (error) {
+        if (error instanceof SourceSyncDeferredError) throw error;
+        checkSyncDeadline(context.deadlineMs);
+        // A failed catch-up page must not silently mark a truncated RSS sync successful.
+        if (context.knownGuids) throw error;
         if (!(error instanceof YouTubeApiCooldownError)) console.warn("YouTube API fallback", {
           kind: "youtube", hostname: "www.googleapis.com", status: error instanceof SourceFetchError ? error.status ?? null : null,
           error: error instanceof SourceFetchError ? error.code : "SYNC_ERROR", durationMs: Math.round(performance.now() - started),
         });
       }
     }
-    const response = await cachedBackup(source.feedUrl, apiKey || "no-api");
+    // A backup can take two ten-second requests; reserve time before starting it.
+    checkSyncDeadline(context.deadlineMs, Date.now() + 25_000);
+    const response = await cachedBackup(source.feedUrl, apiKey ? "api" : "no-api");
+    checkSyncDeadline(context.deadlineMs);
     return "xml" in response ? parseYouTubeFeed(response.xml) : response.items;
   },
 };

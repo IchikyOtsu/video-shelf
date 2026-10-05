@@ -21,7 +21,7 @@ test("configured API is primary and shared by duplicate channel sources without 
   });
   const result = await syncSourceBatch([source, { ...source, id: "two" }], async input => (await youtubeProvider.sync(input)).length);
   assert.deepEqual(result, { synced: 2, failed: 0, imported: 2 });
-  assert.deepEqual(calls, ["/youtube/v3/channels", "/youtube/v3/playlistItems"]);
+  assert.deepEqual(calls, ["/youtube/v3/playlistItems"]);
   const rows = await youtubeProvider.sync(source);
   assert.equal(rows[0].publishedAt?.toISOString(), "2026-10-01T10:00:00.000Z");
 });
@@ -45,6 +45,8 @@ test("API quota failure falls back to RSS and later sources bypass the rejected 
 });
 
 test("API then RSS failure can use the verified page backup", async t => {
+  const channelId = "UCcccccccccccccccccccccc";
+  const source = { id: "backup", kind: "youtube", feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}` };
   apiKey(t, "page-backup-test-key");
   t.mock.method(console, "warn", () => {});
   const calls: string[] = [];
@@ -83,6 +85,17 @@ test("API requests remain bounded to three while a batch processes distinct chan
   const sources = Array.from({ length: 8 }, (_, i) => ({ id: String(i), kind: "youtube", feedUrl: `https://www.youtube.com/feeds/videos.xml?channel_id=UC${String(i).repeat(22)}` }));
   const result = await syncSourceBatch(sources, async input => (await youtubeProvider.sync(input)).length);
   assert.deepEqual(result, { synced: 8, failed: 0, imported: 0 });
-  assert.equal(calls, 16);
+  assert.equal(calls, 8);
   assert.equal(peak, 3);
+});
+
+test("configured catch-up failures never downgrade to a truncated RSS success", async t => {
+  apiKey(t, "catchup-error-test-key");
+  const calls: string[] = [];
+  t.mock.method(globalThis, "fetch", async (input: URL | string) => {
+    calls.push(new URL(String(input)).hostname);
+    return new Response("Unavailable", { status: 500 });
+  });
+  await assert.rejects(youtubeProvider.sync(source, { knownGuids: async () => new Set(["known"]) }));
+  assert.deepEqual(calls, ["www.googleapis.com"]);
 });

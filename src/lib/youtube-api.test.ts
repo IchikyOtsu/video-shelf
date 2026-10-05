@@ -18,7 +18,7 @@ test("API normalization uses the video's real publication date, stable ID and ow
   assert.equal(rows[0].imageUrl, "https://i.ytimg.com/image.jpg");
 });
 
-test("API sync uses two list requests initially and no detail/search/history requests", async () => {
+test("API sync uses one videos-only list request and no channel/detail/search/history requests", async () => {
   const calls: URL[] = [];
   const client = createYouTubeApiClient("test-key", async input => {
     const url = new URL(String(input)); calls.push(url);
@@ -26,13 +26,13 @@ test("API sync uses two list requests initially and no detail/search/history req
   });
   const rows = await client.sync(channelId);
   assert.equal(rows.length, 1);
-  assert.deepEqual(calls.map(url => url.pathname.split("/").at(-1)), ["channels", "playlistItems"]);
-  assert.equal(calls[1].searchParams.get("maxResults"), "50");
-  assert.equal(calls[1].searchParams.get("playlistId"), "UULF" + channelId.slice(2));
+  assert.deepEqual(calls.map(url => url.pathname.split("/").at(-1)), ["playlistItems"]);
+  assert.equal(calls[0].searchParams.get("maxResults"), "50");
+  assert.equal(calls[0].searchParams.get("playlistId"), "UULF" + channelId.slice(2));
   assert.equal(calls.some(url => url.searchParams.has("pageToken")), false);
 });
 
-test("repeated and concurrent syncs share requests, then refresh uploads without rediscovering the channel", async () => {
+test("repeated and concurrent syncs share requests and refresh the video list when its cache expires", async () => {
   let now = 0;
   let calls = 0;
   const client = createYouTubeApiClient("test-key", async input => {
@@ -41,12 +41,12 @@ test("repeated and concurrent syncs share requests, then refresh uploads without
     return json(String(input).includes("/channels?") ? channelData : { items: [upload] });
   }, () => now);
   await Promise.all([client.sync(channelId), client.sync(channelId), client.sync(channelId)]);
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   await client.sync(channelId);
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   now += YOUTUBE_UPLOAD_CACHE_MS;
   await client.sync(channelId);
-  assert.equal(calls, 3);
+  assert.equal(calls, 2);
 });
 
 for (const [status, reason, code] of [[403, "quotaExceeded", "API_QUOTA"], [400, "keyInvalid", "API_CONFIGURATION"], [403, "SERVICE_DISABLED", "API_CONFIGURATION"]] as const) {
@@ -77,7 +77,7 @@ test("HTTP 429 with a non-JSON body also stops further API attempts", async () =
 test("one missing channel does not block other channels", async () => {
   const client = createYouTubeApiClient("test-key", async input => {
     const url = new URL(String(input));
-    if (url.searchParams.get("id") === "UCbbbbbbbbbbbbbbbbbbbbbb") return json({ items: [] });
+    if (url.searchParams.get("playlistId") === "UULFbbbbbbbbbbbbbbbbbbbbbb") return json({}, 404);
     return json(url.pathname.endsWith("/channels") ? channelData : { items: [upload] });
   });
   await assert.rejects(client.sync("UCbbbbbbbbbbbbbbbbbbbbbb"), error => error instanceof SourceFetchError && error.status === 404);
@@ -103,7 +103,7 @@ test("an API outage pauses retries briefly while allowing recovery after one min
   assert.equal(calls, 1);
   now += 60_000;
   assert.equal((await client.sync(channelId)).length, 1);
-  assert.equal(calls, 3);
+  assert.equal(calls, 2);
 });
 
 test("Shorts cleanup requests only the Shorts playlist and follows explicit cursors", async () => {
@@ -129,4 +129,48 @@ test("a missing Shorts playlist is empty but blocked or malformed responses fail
   await assert.rejects(blocked.shorts(channelId), error => error instanceof SourceFetchError && error.status === 403);
   const malformed = createYouTubeApiClient("test-key", async () => json({}));
   await assert.rejects(malformed.shorts(channelId), SourceFetchError);
+});
+
+test("catch-up continues beyond 50 videos until the first known ID, refreshing known metadata without crawling history", async () => {
+  const calls: URL[] = [];
+  const makeUpload = (i: number) => ({ ...upload, contentDetails: { ...upload.contentDetails, videoId: String(i).padStart(11, "0") } });
+  const client = createYouTubeApiClient("test-key", async input => {
+    const url = new URL(String(input)); calls.push(url);
+    const token = url.searchParams.get("pageToken");
+    return json(token ? { items: [makeUpload(50), makeUpload(51), makeUpload(52), makeUpload(53)], nextPageToken: "must-not-fetch" } : { items: Array.from({ length: 50 }, (_, i) => makeUpload(i)), nextPageToken: "second" });
+  });
+  const knownPages: string[][] = [];
+  const rows = await client.sync(channelId, { knownGuids: async ids => { knownPages.push(ids); return new Set([String(51).padStart(11, "0"), String(53).padStart(11, "0")]); } });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].searchParams.get("pageToken"), "second");
+  assert.equal(knownPages[0].length, 50);
+  assert.equal(rows.length, 53);
+  assert.equal(rows.some(row => row.guid === String(52).padStart(11, "0")), false);
+  assert.equal(rows.at(-1)?.guid, String(53).padStart(11, "0"));
+});
+
+test("known first page uses only one request; no known IDs walks to the final page", async () => {
+  let calls = 0;
+  const client = createYouTubeApiClient("test-key", async input => {
+    calls++;
+    return json(new URL(String(input)).searchParams.has("pageToken") ? { items: [] } : { items: [upload], nextPageToken: "last" });
+  });
+  assert.equal((await client.sync(channelId, { knownGuids: async () => new Set([upload.contentDetails.videoId]) })).length, 1);
+  assert.equal(calls, 1);
+  assert.equal((await client.sync(channelId, { knownGuids: async () => new Set() })).length, 1);
+  assert.equal(calls, 2);
+});
+
+test("catch-up failures and repeated page tokens never silently return a partial success", async () => {
+  const failed = createYouTubeApiClient("test-key", async input => json(new URL(String(input)).searchParams.has("pageToken") ? {} : { items: [upload], nextPageToken: "next" }, new URL(String(input)).searchParams.has("pageToken") ? 500 : 200));
+  await assert.rejects(failed.sync(channelId, { knownGuids: async () => new Set() }), SourceFetchError);
+  const looping = createYouTubeApiClient("test-key", async () => json({ items: [upload], nextPageToken: "same" }));
+  await assert.rejects(looping.sync(channelId, { knownGuids: async () => new Set() }), error => error instanceof SourceFetchError && error.code === "INVALID_RESPONSE");
+});
+
+test("catch-up respects its deadline before starting another page", async () => {
+  let now = 0; let calls = 0;
+  const client = createYouTubeApiClient("test-key", async () => { calls++; now += 10; return json({ items: [upload], nextPageToken: "next" }); }, () => now);
+  await assert.rejects(client.sync(channelId, { knownGuids: async () => new Set(), deadlineMs: 10 }), /reportée/);
+  assert.equal(calls, 1);
 });

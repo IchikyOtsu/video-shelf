@@ -1,10 +1,12 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { itemStates, items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
 import { rssProvider } from "./rss";
 import type { ContentType } from "./library";
 import { deterministicItemStateId } from "./item-state";
+import { checkSyncDeadline, SourceSyncDeferredError, SYNC_SOURCE_BUDGET_MS } from "./sync-control";
+import { metadataUpdateSet } from "./item-sync-update";
 import { logSourceSyncFailure } from "./source-fetch";
 
 export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
@@ -20,7 +22,8 @@ export type NormalizedItem = {
   imageUrl?: string | null;
   publishedAt?: Date | null;
 };
-export type SourceProvider = { contentType: Exclude<ContentType, "all">; sync(source: SourceSyncInput): Promise<NormalizedItem[]> };
+export type SourceSyncContext = { knownGuids?: (ids: string[]) => Promise<ReadonlySet<string>>; deadlineMs?: number };
+export type SourceProvider = { contentType: Exclude<ContentType, "all">; sync(source: SourceSyncInput, context?: SourceSyncContext): Promise<NormalizedItem[]> };
 
 export function deduplicateNormalizedItems(rows: NormalizedItem[]) {
   const seen = new Set<string>();
@@ -48,13 +51,18 @@ export async function runSourceSync(
   persist: (rows: NormalizedItem[]) => Promise<number>,
   recordSuccess: () => Promise<void>,
   recordFailure: (message: string) => Promise<void>,
+  context?: SourceSyncContext,
 ) {
   const started = performance.now();
   try {
-    const imported = await persist(deduplicateNormalizedItems(await provider.sync(source)));
+    checkSyncDeadline(context?.deadlineMs);
+    const rows = deduplicateNormalizedItems(await provider.sync(source, context));
+    checkSyncDeadline(context?.deadlineMs);
+    const imported = await persist(rows);
     await recordSuccess();
     return imported;
   } catch (error) {
+    if (error instanceof SourceSyncDeferredError) throw error;
     logSourceSyncFailure(source, error, Math.round(performance.now() - started));
     try { await recordFailure(shortSyncError(error)); }
     catch (recordError) { logSourceSyncFailure(source, recordError, Math.round(performance.now() - started)); }
@@ -68,22 +76,37 @@ export function getSourceProvider(kind: string) {
   return providers[kind];
 }
 
-export async function syncSource(source: SourceSyncInput, { initialImport = false }: { initialImport?: boolean } = {}) {
+export async function syncSource(source: SourceSyncInput, { initialImport = false, deadlineMs = Date.now() + SYNC_SOURCE_BUDGET_MS }: { initialImport?: boolean; deadlineMs?: number } = {}) {
   if (!db) throw new Error("Database not connected");
   const database = db;
-  const provider = getSourceProvider(source.kind);
+  checkSyncDeadline(deadlineMs);
+  const resolved = getSourceProvider(source.kind) || { contentType: "article" as const, async sync() { throw new Error("Ce type de source ne peut pas encore être actualisé."); } };
+  const context: SourceSyncContext = { deadlineMs };
+  const provider: SourceProvider = {
+    contentType: resolved.contentType,
+    async sync(input) {
+      if (!initialImport && source.kind === "youtube" && (await database.select({ id: items.id }).from(items).where(eq(items.sourceId, source.id)).limit(1)).length) {
+        context.knownGuids = async ids => {
+          if (!ids.length) return new Set<string>();
+          const known = await database.select({ guid: items.guid }).from(items).where(and(eq(items.sourceId, source.id), inArray(items.guid, ids)));
+          return new Set(known.map(item => item.guid));
+        };
+      }
+      checkSyncDeadline(deadlineMs);
+      return resolved.sync(input, context);
+    },
+  };
   return runSourceSync(
     source,
-    provider || { contentType: "article", async sync() { throw new Error("Ce type de source ne peut pas encore être actualisé."); } },
+    provider,
     async normalized => {
       if (!normalized.length) return 0;
       const changed = await database.insert(items).values(normalized.map(item => ({ sourceId: source.id, ...item })))
         .onConflictDoUpdate({
           target: [items.sourceId, items.guid],
-          set: { publishedAt: sql`excluded."published_at"` },
-          setWhere: sql`${items.publishedAt} is null and excluded."published_at" is not null`,
+          set: metadataUpdateSet(),
         }).returning({ id: items.id, inserted: sql<boolean>`xmax = 0` });
-      // Date repairs preserve item IDs and seen/saved state, and are not imports.
+      // Metadata updates preserve IDs, creation time and all user state.
       const inserted = changed.filter(item => item.inserted);
       if (initialImport && !source.userId) throw new Error("Initial source import requires an owner.");
       const states = initialImportStates(source.userId || "", inserted.map(item => item.id), initialImport);
@@ -92,5 +115,6 @@ export async function syncSource(source: SourceSyncInput, { initialImport = fals
     },
     async () => { await database.update(sources).set({ lastSyncedAt: new Date(), lastSyncError: null }).where(eq(sources.id, source.id)); },
     async message => { await database.update(sources).set({ lastSyncError: message }).where(eq(sources.id, source.id)); },
+    context,
   );
 }
