@@ -1,4 +1,4 @@
-export type SourceFetchErrorCode = "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR";
+export type SourceFetchErrorCode = "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR" | "API_QUOTA" | "API_CONFIGURATION" | "INVALID_RESPONSE";
 
 export class SourceFetchError extends Error {
   readonly code: SourceFetchErrorCode;
@@ -6,7 +6,7 @@ export class SourceFetchError extends Error {
   readonly status?: number;
 
   constructor(code: SourceFetchErrorCode, hostname: string, status?: number) {
-    super(code === "HTTP_ERROR" ? `Flux inaccessible (HTTP ${status}).` : code === "TIMEOUT" ? "Le délai de récupération du flux a expiré." : "Impossible de joindre le serveur du flux.");
+    super(code === "HTTP_ERROR" ? `Flux inaccessible (HTTP ${status}).` : code === "TIMEOUT" ? "Le délai de récupération du flux a expiré." : code === "API_QUOTA" ? "Le quota de l’API YouTube est temporairement épuisé." : code === "API_CONFIGURATION" ? "La configuration de l’API YouTube a été refusée." : code === "INVALID_RESPONSE" ? "Le serveur a renvoyé une réponse illisible." : "Impossible de joindre le serveur du flux.");
     this.name = "SourceFetchError";
     this.code = code;
     this.hostname = hostname;

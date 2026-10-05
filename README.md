@@ -54,12 +54,20 @@ Importing is dispatched by the small provider contract in `src/lib/sources.ts`. 
 
 ## YouTube experience
 
-Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Results support multi-selection across successive searches, then `/api/sources/batch` validates, inserts and synchronizes up to 50 channels with partial-failure reporting. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. YouTube RSS does not provide the channel’s entire historical catalog, so Shelf deliberately follows forward instead of crawling older uploads through the Data API.
+Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Results support multi-selection across successive searches, then `/api/sources/batch` validates, inserts and synchronizes up to 50 channels with partial-failure reporting. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. Synchronization follows recent uploads; it does not paginate through the historical catalog.
 
-Optionally configure `YOUTUBE_API_KEY` with YouTube Data API v3 enabled for channel name search. Without it, the app reads public YouTube search results; YouTube can block these requests or change the page format. If search is unavailable, the dialog suggests a direct handle or channel URL.
+Configure the server-only `YOUTUBE_API_KEY` with YouTube Data API v3 enabled for channel search and synchronization. With a key, sync uses `channels.list` to discover the uploads playlist (cached seven days), then one `playlistItems.list` call for the most recent 50 entries (cached five minutes on a warm instance). Each list request costs one quota unit. There are no `search.list` calls during sync, per-video detail calls, or history pagination. Concurrent requests for the same resource share one in-flight request on a warm instance; stable channel lookups also use the Next.js Data Cache. Upload lists are fetched fresh when the local cache expires, avoiding a stale-while-revalidate delay in the daily cron. Cache refreshes and cold instances can add requests, so these are reuse policies rather than a strict daily quota ceiling.
+
+Publication dates come from `contentDetails.videoPublishedAt`, not the playlist insertion timestamp. Previously undated items get their missing dates filled when encountered, without changing their IDs or seen/saved state. Only newly inserted items count as imports. The uploads API does not identify Shorts explicitly; this path does not guess based on duration or make per-video requests just to classify them.
+
+On API failure, sync tries RSS; on RSS 404 it can use the verified public channel video page as a last resort. Without a key, sync starts with RSS. Successful RSS/page backups are cached for five minutes on a warm instance and concurrent duplicate requests share one fetch. Page-derived videos have no exact publication date and are sorted after dated items. API quota/key failures trigger a fifteen-minute cooldown; server errors/network failures/timeouts trigger a one-minute cooldown. These pauses are shared by sources on the current warm instance, avoiding repeated rejected API requests within a batch. The cooldown is not a distributed lock across Vercel instances. HTTP/timeouts remain distinguishable and logs contain only safe categories, hostname, status and duration; API keys and response bodies are never logged.
+
+Without a key, search reads public YouTube search results; YouTube can block these requests or change the page format. If search is unavailable, the dialog suggests a direct handle or channel URL.
 
 Videos play in a YouTube privacy-enhanced embed after a click. Videos whose owners disable embedding can be opened with the YouTube link below the player.
 
-## Automatic YouTube refresh
+## Automatic source refresh
 
 Vercel calls `/api/cron/sync` once per day at 08:00 UTC. Add a `CRON_SECRET` environment variable in Vercel (a different random value from `AUTH_SECRET`). Vercel sends this secret automatically to the Cron route.
+
+Cron handles all active providers with at most three source syncs running simultaneously. It skips sources successfully synchronized within the past hour and returns `{ synced, failed, imported, skipped }`. Failures remain isolated. The manual global refresh sends one authenticated server request, includes every active provider, and reloads feed/source state once after completion. Manual refresh can reuse the five-minute YouTube API cache even when cron would skip the source.

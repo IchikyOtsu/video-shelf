@@ -1,9 +1,31 @@
 import { XMLParser } from "fast-xml-parser";
 import type { NormalizedItem, SourceProvider } from "./sources";
-import { fetchYouTubeFeedWithFallback } from "./youtube-fallback";
+import { fetchYouTubeFeedWithFallback, youtubeFeedChannelId } from "./youtube-fallback";
+import { youtubeApiClient, YouTubeApiCooldownError } from "./youtube-api";
+import { SourceFetchError } from "./source-fetch";
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false });
 const list = <T,>(value: T | T[] | undefined) => value ? (Array.isArray(value) ? value : [value]) : [];
+
+type Backup = Awaited<ReturnType<typeof fetchYouTubeFeedWithFallback>>;
+const backups = new Map<string, { value: Backup; expires: number }>();
+const pendingBackups = new Map<string, Promise<Backup>>();
+async function cachedBackup(feedUrl: string, scope: string) {
+  const key = `${scope}:${youtubeFeedChannelId(feedUrl) || feedUrl}`;
+  const cached = backups.get(key);
+  if (cached && cached.expires > Date.now()) return cached.value;
+  if (cached) backups.delete(key);
+  const pending = pendingBackups.get(key);
+  if (pending) return pending;
+  const request = fetchYouTubeFeedWithFallback(feedUrl);
+  pendingBackups.set(key, request);
+  try {
+    const value = await request;
+    if (backups.size >= 256) backups.delete(backups.keys().next().value!);
+    backups.set(key, { value, expires: Date.now() + 5 * 60_000 });
+    return value;
+  } finally { pendingBackups.delete(key); }
+}
 
 export function isYouTubeShort(url: string) {
   try {
@@ -26,7 +48,19 @@ export function parseYouTubeFeed(xml: string): NormalizedItem[] {
 export const youtubeProvider: SourceProvider = {
   contentType: "video",
   async sync(source) {
-    const response = await fetchYouTubeFeedWithFallback(source.feedUrl);
+    const apiKey = process.env.YOUTUBE_API_KEY;
+    const channelId = youtubeFeedChannelId(source.feedUrl);
+    if (apiKey && channelId) {
+      const started = performance.now();
+      try { return await youtubeApiClient(apiKey).sync(channelId); }
+      catch (error) {
+        if (!(error instanceof YouTubeApiCooldownError)) console.warn("YouTube API fallback", {
+          kind: "youtube", hostname: "www.googleapis.com", status: error instanceof SourceFetchError ? error.status ?? null : null,
+          error: error instanceof SourceFetchError ? error.code : "SYNC_ERROR", durationMs: Math.round(performance.now() - started),
+        });
+      }
+    }
+    const response = await cachedBackup(source.feedUrl, apiKey || "no-api");
     return "xml" in response ? parseYouTubeFeed(response.xml) : response.items;
   },
 };
