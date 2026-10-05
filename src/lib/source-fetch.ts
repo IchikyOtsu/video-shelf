@@ -1,3 +1,4 @@
+import { safeSourceSyncError, SourceDatabaseError } from "./source-database-error";
 export type SourceFetchErrorCode = "HTTP_ERROR" | "TIMEOUT" | "NETWORK_ERROR" | "API_QUOTA" | "API_CONFIGURATION" | "INVALID_RESPONSE";
 
 export class SourceFetchError extends Error {
@@ -46,12 +47,14 @@ export async function fetchSourceText(feedUrl: string, headers: HeadersInit = {}
 }
 
 export function logSourceSyncFailure(source: { kind: string; feedUrl: string }, error: unknown, durationMs: number) {
+  error = safeSourceSyncError(error);
   // Never log URLs, query strings, response bodies, arbitrary messages or owners.
   console.error("Source sync failed", {
     kind: /^[a-z0-9_-]{1,40}$/i.test(source.kind) ? source.kind : "unknown",
     hostname: error instanceof SourceFetchError ? error.hostname : sourceHostname(source.feedUrl),
     status: error instanceof SourceFetchError ? error.status ?? null : null,
-    error: error instanceof SourceFetchError ? error.code : "SYNC_ERROR",
+    error: error instanceof SourceFetchError || error instanceof SourceDatabaseError ? error.code : "SYNC_ERROR",
+    ...(error instanceof SourceDatabaseError ? { databaseCode: error.databaseCode ?? null } : {}),
     durationMs,
   });
 }
