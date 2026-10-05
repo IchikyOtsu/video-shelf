@@ -296,3 +296,7 @@ a { color:inherit; }
 @media(max-width:700px) { .article-card h3 { font-size:16px; } }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 @media(max-width:600px) { .video-grid>.article-card { grid-column:1/-1; } }
+
+.digest-setting { display:flex; gap:12px; align-items:flex-start; cursor:pointer; }
+.digest-setting input { flex-shrink:0; margin-top:3px; accent-color:#546440; }
+.digest-setting small { display:block; margin-top:6px; color:var(--muted); font-size:12px; line-height:1.5; }

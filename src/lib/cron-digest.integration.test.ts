@@ -1,0 +1,224 @@
+import assert from "node:assert/strict";
+import { after, before, beforeEach, test } from "node:test";
+import { readFileSync, readdirSync } from "node:fs";
+import { PGlite } from "@electric-sql/pglite";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
+import { createCronDigestStore, type DigestQuery } from "./cron-digest-store";
+import { itemImportStatement, insertedSyncResult, type CronImportContext } from "./item-import";
+import { dailyCronRunId, deliverDigests, DigestDeliveryError, type DigestMessage } from "./daily-digest";
+import { runScheduledSync } from "./scheduled-sync";
+import { syncSourceBatch } from "./source-sync-batch";
+import type { NormalizedItem, SourceSyncInput } from "./sources";
+
+const database = new PGlite();
+const dialect = new PgDialect();
+const query: DigestQuery = async <T extends Record<string, unknown>>(statement: SQL) => {
+  const { sql, params } = dialect.sqlToQuery(statement);
+  return (await database.query<T>(sql, params)).rows;
+};
+const store = createCronDigestStore(query);
+const userA = "11111111-1111-4111-8111-111111111111";
+const userB = "22222222-2222-4222-8222-222222222222";
+const sourceA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const sourceB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const sourceC = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+const makeItem = (guid: string, mediaType = "video"): NormalizedItem => ({ guid, title: "Item " + guid, url: "https://example.test/" + guid, mediaType, publishedAt: new Date("2001-01-01T00:00:00Z") });
+const fixture = new Map<string, NormalizedItem[]>();
+let sends: { key: string; message: DigestMessage }[] = [];
+let token = 0;
+const delivery = (runId: string, deadlineMs: number, send = async (message: DigestMessage, key: string) => { sends.push({ key, message }); return 200; }) => deliverDigests(runId, store, {
+  deadlineMs, token: () => `email-${++token}`, config: () => ({ appUrl: "https://shelf.test", from: "Shelf <updates@shelf.test>" }), send, wait: async () => {},
+});
+async function persist(source: SourceSyncInput, cron?: CronImportContext) {
+  const rows = fixture.get(source.id) || [];
+  if (!rows.length) return insertedSyncResult([]);
+  return insertedSyncResult(await query<{ id: string; inserted: boolean }>(itemImportStatement(source.id, rows, cron)));
+}
+async function run(send?: (message: DigestMessage, key: string) => Promise<number>) {
+  return runScheduledSync(store, { startedAt: Date.now(), token: `run-${++token}`, sync: async (source, options) => persist(source, options.cron), deliver: (runId, deadline) => delivery(runId, deadline, send) });
+}
+before(async () => {
+  for (const file of readdirSync("drizzle").filter(name => /^\d{4}.*\.sql$/.test(name)).sort()) {
+    await database.exec(readFileSync("drizzle/" + file, "utf8"));
+  }
+});
+after(() => database.close());
+beforeEach(async t => {
+  if ("mock" in t) { t.mock.method(console, "info", () => {}); t.mock.method(console, "error", () => {}); }
+  await database.exec("truncate users cascade; truncate cron_runs cascade;");
+  await database.query("insert into users(id,email,password_hash) values ($1,'a@example.test','hash'),($2,'b@example.test','hash')", [userA, userB]);
+  await database.query("insert into sources(id,user_id,name,feed_url,kind) values ($1,$4,'YouTube A','https://youtube.test/a','youtube'),($2,$4,'Articles B','https://rss.test/b','rss'),($3,$5,'Podcasts C','https://rss.test/c','rss')", [sourceA, sourceB, sourceC, userA, userB]);
+  fixture.clear(); sends = [];
+});
+
+test("one digest per user groups YouTube and RSS sources, while zero-new-item users receive nothing", async () => {
+  fixture.set(sourceA, [makeItem("video")]); fixture.set(sourceB, [makeItem("article", "article")]);
+  const result = await run();
+  assert.equal(result.imported, 2); assert.equal(result.emailsSent, 1); assert.equal(result.emailsFailed, 0);
+  assert.equal(sends.length, 1); assert.equal(sends[0].message.to, "a@example.test");
+  assert.ok(sends[0].message.html.includes("YouTube A")); assert.ok(sends[0].message.html.includes("Articles B"));
+  assert.ok(sends[0].message.html.includes("Vidéo")); assert.ok(sends[0].message.html.includes("Article"));
+  assert.ok(sends[0].message.html.includes("2001")); // Old publication dates still count if inserted now.
+});
+
+test("metadata-only updates are not new imports and preserve item ID and user state", async () => {
+  fixture.set(sourceA, [makeItem("known")]);
+  const inserted = await persist({ id: sourceA, kind: "youtube", feedUrl: "https://youtube.test/a" });
+  const id = inserted.insertedItemIds[0];
+  await database.query("insert into item_states(user_id,item_id,read,saved,progress_seconds) values ($1,$2,true,true,120)", [userA, id]);
+  fixture.set(sourceA, [{ ...makeItem("known"), title: "Renamed", imageUrl: "https://example.test/new.jpg" }]);
+  const result = await run();
+  assert.equal(result.imported, 0); assert.equal(result.emailsSent, 0); assert.equal(sends.length, 0);
+  const rows = await database.query<{ id: string; title: string; saved: boolean; read: boolean; progress_seconds: number }>("select i.id,i.title,s.saved,s.read,s.progress_seconds from items i join item_states s on s.item_id=i.id");
+  assert.deepEqual(rows.rows[0], { id, title: "Renamed", saved: true, read: true, progress_seconds: 120 });
+  assert.equal((await database.query("select * from cron_run_items")).rows.length, 0);
+});
+
+test("default-enabled preferences work for existing accounts and explicit opt-out prevents delivery", async () => {
+  fixture.set(sourceA, [makeItem("video")]); fixture.set(sourceC, [makeItem("episode", "podcast")]);
+  await database.query("insert into digest_preferences(user_id,enabled) values ($1,false)", [userA]);
+  const result = await run();
+  assert.equal(result.emailsSent, 1); assert.equal(sends[0].message.to, "b@example.test");
+  assert.ok(sends[0].message.html.includes("Podcast"));
+});
+
+test("one provider failure does not affect another user's digest", async () => {
+  fixture.set(sourceA, [makeItem("video")]); fixture.set(sourceC, [makeItem("episode", "podcast")]);
+  const result = await run(async (message, key) => {
+    if (message.to === "a@example.test") throw new DigestDeliveryError("PROVIDER_ERROR", 503);
+    sends.push({ message, key }); return 200;
+  });
+  assert.equal(result.emailsSent, 1); assert.equal(result.emailsFailed, 1);
+  assert.equal(sends[0].message.to, "b@example.test");
+});
+
+test("cron retry skips completed source synchronization and never resends successful digests", async () => {
+  fixture.set(sourceA, [makeItem("video")]);
+  await run();
+  fixture.set(sourceA, [makeItem("different-video")]);
+  const result = await run();
+  assert.equal(result.emailsSent, 0); assert.equal(sends.length, 1);
+  assert.equal((await database.query("select * from items")).rows.length, 1);
+  assert.equal((await database.query("select * from cron_digests")).rows.length, 1);
+});
+
+test("acknowledgement loss retries the identical Resend payload/key without duplicate acceptance", async () => {
+  fixture.set(sourceA, [makeItem("video")]);
+  const accepted = new Map<string, string>(); let attempts = 0;
+  const send = async (message: DigestMessage, key: string) => {
+    attempts++;
+    const body = JSON.stringify(message);
+    if (accepted.has(key)) assert.equal(accepted.get(key), body); else accepted.set(key, body);
+    if (attempts === 1) throw new DigestDeliveryError("NETWORK_ERROR");
+    return 200;
+  };
+  await run(send);
+  await database.query("update cron_run_items set title='Changed after first attempt'");
+  const result = await run(send);
+  assert.equal(attempts, 2); assert.equal(accepted.size, 1); assert.equal(result.emailsSent, 1);
+});
+
+test("a crash after insertion but before checkpointing retains exact imports for the resumed run", async () => {
+  fixture.set(sourceA, [makeItem("video")]);
+  const runId = dailyCronRunId(); const leaseToken = "crashed";
+  await store.acquire(runId, leaseToken); await store.seed(runId, leaseToken);
+  const result = await persist({ id: sourceA, kind: "youtube", feedUrl: "https://youtube.test/a" }, { runId, leaseToken });
+  assert.equal(result.imported, 1);
+  await database.query("update cron_runs set lease_until=now()-interval '1 second'");
+  const resumed = await run();
+  assert.equal(resumed.imported, 1); assert.equal(resumed.emailsSent, 1);
+  assert.equal((await database.query("select * from cron_run_items")).rows.length, 1);
+});
+
+test("manual batch refresh creates no cron import ledger, outbox, or emails", async () => {
+  fixture.set(sourceA, [makeItem("manual-video")]);
+  const summary = await syncSourceBatch([{ id: sourceA, kind: "youtube", feedUrl: "https://youtube.test/a" }], async source => (await persist(source)).imported);
+  assert.equal(summary.imported, 1); assert.equal(sends.length, 0);
+  assert.equal((await database.query("select * from cron_run_items")).rows.length, 0);
+  assert.equal((await database.query("select * from cron_digests")).rows.length, 0);
+  assert.equal((await database.query("select * from cron_runs")).rows.length, 0);
+});
+
+test("emails cannot start until all source workers have completed", async () => {
+  fixture.set(sourceA, [makeItem("video")]); fixture.set(sourceB, [makeItem("article", "article")]);
+  let running = 0; let completed = 0;
+  await runScheduledSync(store, { startedAt: Date.now(), token: "ordered-run", sync: async (source, options) => {
+    running++; await new Promise<void>(resolve => setImmediate(resolve));
+    const result = await persist(source, options.cron); running--; completed++; return result;
+  }, deliver: (runId, deadline) => {
+    assert.equal(running, 0); assert.equal(completed, 3);
+    return delivery(runId, deadline);
+  } });
+  assert.equal(sends.length, 1);
+});
+
+test("snapshot limits displayed items to twenty but retains total count and inbox link", async () => {
+  fixture.set(sourceA, Array.from({ length: 25 }, (_, i) => makeItem("video-" + i)));
+  const result = await run();
+  assert.equal(result.imported, 25); assert.equal(sends.length, 1);
+  assert.ok(sends[0].message.subject.includes("25"));
+  assert.equal((sends[0].message.html.match(/https:\/\/example.test\/video-/g) || []).length, 20);
+  assert.ok(sends[0].message.html.includes("Voir toutes les nouveautés"));
+  const rows = await database.query<{ payload: unknown[] }>("select payload from cron_digests");
+  assert.equal(rows.rows[0].payload.length, 20);
+});
+
+test("disabled preference also suppresses a queued unsent retry", async () => {
+  fixture.set(sourceA, [makeItem("video")]);
+  await run(async () => { throw new DigestDeliveryError("PROVIDER_ERROR", 503); });
+  await database.query("insert into digest_preferences(user_id,enabled) values ($1,false)", [userA]);
+  const result = await run();
+  assert.equal(result.emailsSent, 0); assert.equal(sends.length, 0);
+});
+
+test("expired uncertain deliveries are not resent after Resend's idempotency window", async () => {
+  fixture.set(sourceA, [makeItem("video")]);
+  await run(async () => { throw new DigestDeliveryError("NETWORK_ERROR"); });
+  await database.exec("update cron_digests set first_attempt_at=now()-interval '24 hours'");
+  const result = await run();
+  assert.equal(result.emailsSent, 0); assert.equal(result.emailsFailed, 1); assert.equal(sends.length, 0);
+  assert.equal((await database.query<{ status: string }>("select status from cron_digests")).rows[0].status, "abandoned");
+});
+
+test("overlapping cron requests cannot acquire the same run lease", async () => {
+  assert.ok(await store.acquire(dailyCronRunId(), "first"));
+  const result = await run();
+  assert.equal(result.busy, true); assert.equal(sends.length, 0);
+});
+
+test("a finalized run rejects late item attribution from an old worker", async () => {
+  const runId = dailyCronRunId(); const leaseToken = "sealed";
+  await store.acquire(runId, leaseToken); await store.seed(runId, leaseToken); await store.seal(runId, leaseToken);
+  fixture.set(sourceA, [makeItem("late-video")]);
+  const result = await persist({ id: sourceA, kind: "youtube", feedUrl: "https://youtube.test/a" }, { runId, leaseToken });
+  assert.equal(result.imported, 0);
+  assert.equal((await database.query("select * from items")).rows.length, 0);
+});
+
+test("ledger write failure rolls back the item insert atomically", async () => {
+  const runId = dailyCronRunId(); const leaseToken = "atomic";
+  await store.acquire(runId, leaseToken);
+  fixture.set(sourceA, [makeItem("atomic")]);
+  await database.exec("create function reject_digest_ledger() returns trigger language plpgsql as $$ begin raise exception 'ledger unavailable'; end $$; create trigger reject_ledger before insert on cron_run_items for each row execute function reject_digest_ledger();");
+  try {
+    await assert.rejects(persist({ id: sourceA, kind: "youtube", feedUrl: "https://youtube.test/a" }, { runId, leaseToken }));
+    assert.equal((await database.query<{ count: number }>("select count(*)::int as count from items")).rows[0].count, 0);
+    assert.equal((await database.query<{ count: number }>("select count(*)::int as count from cron_run_items")).rows[0].count, 0);
+  } finally { await database.exec("drop trigger reject_ledger on cron_run_items; drop function reject_digest_ledger();"); }
+});
+
+test("unsafe provider exceptions never reach logs and failures still permit other users", async t => {
+  fixture.set(sourceA, [makeItem("video")]); fixture.set(sourceC, [makeItem("podcast", "podcast")]);
+  const logs: unknown[][] = [];
+  t.mock.method(console, "error", (...args: unknown[]) => { logs.push(args); });
+  const result = await run(async message => {
+    if (message.to === "a@example.test") throw new Error("secret-token body a@example.test");
+    return 200;
+  });
+  assert.equal(result.emailsFailed, 1); assert.equal(result.emailsSent, 1);
+  const serialized = JSON.stringify(logs);
+  assert.ok(serialized.includes(userA)); assert.ok(serialized.includes("DELIVERY_ERROR"));
+  assert.ok(!serialized.includes("secret-token")); assert.ok(!serialized.includes("a@example.test"));
+  assert.deepEqual(Object.keys(logs[0][1] as object).sort(), ["error", "itemCount", "status", "success", "userId"]);
+});
