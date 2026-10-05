@@ -1,6 +1,7 @@
 import type { NormalizedItem } from "./sources";
 import { SourceFetchError, type SourceFetchErrorCode } from "./source-fetch";
 import { youtubeChannelIdPattern } from "./youtube";
+import { youtubeFormatPlaylist } from "./youtube-shorts";
 
 export const YOUTUBE_UPLOAD_CACHE_MS = 5 * 60_000;
 const CHANNEL_CACHE_MS = 7 * 24 * 60 * 60_000;
@@ -102,9 +103,20 @@ export function createYouTubeApiClient(apiKey: string, fetcher: typeof fetch = f
       if (!channel) throw new SourceFetchError("HTTP_ERROR", "www.googleapis.com", 404);
       const uploads = object(object(channel.contentDetails).relatedPlaylists).uploads;
       if (typeof uploads !== "string" || !/^[A-Za-z0-9_-]{10,128}$/.test(uploads)) throw new SourceFetchError("INVALID_RESPONSE", "www.googleapis.com");
-      const data = await get("playlistItems", { part: "snippet,contentDetails", playlistId: uploads, maxResults: "50", fields: "items(snippet(title,description,videoOwnerChannelId,videoOwnerChannelTitle,channelTitle,thumbnails),contentDetails(videoId,videoPublishedAt))" }, YOUTUBE_UPLOAD_CACHE_MS);
+      const data = await get("playlistItems", { part: "snippet,contentDetails", playlistId: youtubeFormatPlaylist(channelId, "videos"), maxResults: "50", fields: "items(snippet(title,description,videoOwnerChannelId,videoOwnerChannelTitle,channelTitle,thumbnails),contentDetails(videoId,videoPublishedAt))" }, YOUTUBE_UPLOAD_CACHE_MS);
       // Only one page. No historical crawl and no per-video requests.
       return normalizeYouTubeUploads(data, channelId);
+    },
+    async shorts(channelId: string, pageToken?: string): Promise<{ ids: string[]; nextPageToken?: string }> {
+      try {
+        const data = await get("playlistItems", { part: "contentDetails", playlistId: youtubeFormatPlaylist(channelId, "shorts"), maxResults: "50", fields: "nextPageToken,items(contentDetails/videoId)", ...(pageToken ? { pageToken } : {}) }, YOUTUBE_UPLOAD_CACHE_MS);
+        const ids = array(data.items).map(item => object(object(item).contentDetails).videoId).filter((id): id is string => typeof id === "string" && /^[A-Za-z0-9_-]{11}$/.test(id));
+        return { ids, ...(typeof data.nextPageToken === "string" && data.nextPageToken ? { nextPageToken: data.nextPageToken } : {}) };
+      } catch (error) {
+        // A channel without Shorts can have no Shorts playlist.
+        if (error instanceof SourceFetchError && error.status === 404) return { ids: [] };
+        throw error;
+      }
     },
   };
 }

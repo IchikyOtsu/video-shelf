@@ -5,6 +5,7 @@ import { SourceFetchError } from "./source-fetch";
 
 const channelId = "UCln9P4Qm3-EAY4aiEPmRwEA";
 const feedUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+const videosFeedUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=UULF${channelId.slice(2)}`;
 const video = { videoRenderer: { videoId: "dQw4w9WgXcQ", title: { runs: [{ text: "Video" }] }, lengthText: { simpleText: "3:12" }, thumbnail: { thumbnails: [{ url: "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg" }] } } };
 function page(contents: unknown[], owner = channelId) {
   const data = {
@@ -52,19 +53,19 @@ test("RSS remains the primary fetch with no second request on success", async t 
   const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string) => { calls.push(url); return new Response("<feed/>"); });
   assert.deepEqual(await fetchYouTubeFeedWithFallback(feedUrl), { xml: "<feed/>" });
-  assert.deepEqual(calls, [feedUrl]);
+  assert.deepEqual(calls, [videosFeedUrl]);
 });
 
 test("a YouTube RSS 404 falls back to the same channel's public video page", async t => {
   const calls: string[] = [];
   t.mock.method(globalThis, "fetch", async (url: string) => {
     calls.push(url);
-    return url === feedUrl ? new Response("Not found", { status: 404 }) : new Response(page([video]));
+    return url === videosFeedUrl ? new Response("Not found", { status: 404 }) : new Response(page([video]));
   });
   const result = await fetchYouTubeFeedWithFallback(feedUrl);
   assert.ok("items" in result);
   assert.equal(result.items[0].guid, "dQw4w9WgXcQ");
-  assert.deepEqual(calls, [feedUrl, `https://www.youtube.com/channel/${channelId}/videos`]);
+  assert.deepEqual(calls, [videosFeedUrl, `https://www.youtube.com/channel/${channelId}/videos`]);
 });
 
 for (const status of [403, 429]) {
@@ -77,6 +78,11 @@ for (const status of [403, 429]) {
 }
 
 test("the fallback HTTP error remains observable", async t => {
-  t.mock.method(globalThis, "fetch", async (url: string) => new Response("Unavailable", { status: url === feedUrl ? 404 : 403 }));
+  t.mock.method(globalThis, "fetch", async (url: string) => new Response("Unavailable", { status: url === videosFeedUrl ? 404 : 403 }));
   await assert.rejects(fetchYouTubeFeedWithFallback(feedUrl), error => error instanceof SourceFetchError && error.status === 403);
+});
+
+test("modern nested Shorts commands are excluded from the page backup", () => {
+  const short = { lockupViewModel: { contentType: "LOCKUP_CONTENT_TYPE_VIDEO", contentId: "bbbbbbbbbbb", metadata: { lockupMetadataViewModel: { title: { content: "Short" } } }, rendererContext: { commandContext: { onTap: { innertubeCommand: { reelWatchEndpoint: { videoId: "bbbbbbbbbbb" } } } } } } };
+  assert.deepEqual(parseYouTubeVideosPage(page([video, short]), channelId).map(item => item.guid), ["dQw4w9WgXcQ"]);
 });
