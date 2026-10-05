@@ -3,7 +3,7 @@ export type ContentType = "all" | "video" | "article" | "podcast";
 export type FeedItem = {
   id: string; title: string; url: string; audioUrl?: string | null; imageUrl: string | null;
   publishedAt: string | null; sourceName: string; sourceId: string;
-  summary: string | null; mediaType: string; sourceKind: string; read: boolean; saved: boolean;
+  summary: string | null; author?: string | null; readingMinutes?: number | null; mediaType: string; sourceKind: string; read: boolean; saved: boolean;
   progressSeconds: number; durationSeconds: number | null; lastPlayedAt: string | null;
 };
 export type LibraryCounts = Record<LibraryView, number>;

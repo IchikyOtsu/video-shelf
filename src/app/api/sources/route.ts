@@ -25,7 +25,7 @@ export async function POST(request: Request) {
   let feedUrl = inputUrl?.trim(); let siteUrl: string | null = null; let imageUrl: string | null = null; let resolvedName: string | null = null; let contentType;
   try {
     if (kind === "youtube") { const resolved = await resolveYouTubeChannel(inputUrl); feedUrl = resolved.feedUrl; siteUrl = resolved.siteUrl; imageUrl = resolved.imageUrl; resolvedName = resolved.name; }
-    else { const inspected = await inspectRssFeed(feedUrl); resolvedName = inspected.name; siteUrl = inspected.siteUrl; contentType = inspected.contentType; }
+    else { const inspected = await inspectRssFeed(feedUrl); resolvedName = inspected.name; siteUrl = inspected.siteUrl; imageUrl = inspected.imageUrl; contentType = inspected.contentType; }
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Ajoute une URL valide." }, { status: 400 }); }
   if (!name?.trim() && !resolvedName) return NextResponse.json({ error: "Ajoute un nom pour cette source." }, { status: 400 });
   if (await db.query.sources.findFirst({ where: and(eq(sources.userId, user.id), eq(sources.feedUrl, feedUrl)) })) return NextResponse.json({ error: "Cette source est déjà dans ta bibliothèque." }, { status: 409 });

@@ -38,3 +38,37 @@ test("initial RSS imports are seen while later RSS sync items remain unseen", ()
   assert.deepEqual(initialImportStates("user-1", ["initial-item"], true), [{ id: deterministicItemStateId("user-1", "initial-item"), userId: "user-1", itemId: "initial-item", read: true }]);
   assert.deepEqual(initialImportStates("user-1", ["later-item"], false), []);
 });
+
+test("RSS content images, lazy images and feed artwork are imported without per-article requests", () => {
+  const result = parseRssOrAtom(`<rss><channel><title>Magazine</title><image><url>/logo.png</url></image><item><guid>one</guid><title>Un &amp; deux</title><link>https://journal.test/articles/one</link><description><![CDATA[<p>Résumé.</p>]]></description><content:encoded><![CDATA[<p>Le contenu.</p><img src="/hero.jpg"/>]]></content:encoded></item><item><guid>two</guid><title>Deux</title><link>https://journal.test/two</link></item></channel></rss>`, "https://journal.test/feed");
+  assert.equal(result.imageUrl, "https://journal.test/logo.png");
+  assert.equal(result.items[0].imageUrl, "https://journal.test/hero.jpg");
+  assert.equal(result.items[0].title, "Un & deux");
+  assert.equal(result.items[1].imageUrl, "https://journal.test/logo.png");
+});
+
+test("image enclosures do not turn articles into podcasts and video media is not treated as artwork", () => {
+  const result = parseRssOrAtom(`<feed><title>Journal</title><entry><id>one</id><title>One</title><link rel="alternate" href="https://journal.test/one"/><link rel="enclosure" type="image/jpeg" href="https://cdn.test/hero.jpg"/><media:content type="video/mp4" url="https://cdn.test/video.mp4"/></entry></feed>`, "https://journal.test/feed");
+  assert.equal(result.contentType, "article");
+  assert.equal(result.items[0].audioUrl, null);
+  assert.equal(result.items[0].imageUrl, "https://cdn.test/hero.jpg");
+});
+
+test("Atom XHTML, nested media groups and xml:base preserve publication dates and resolve images", () => {
+  const result = parseRssOrAtom(`<feed xml:base="https://journal.test/assets/"><title>Journal</title><entry><id>one</id><title>One</title><link href="https://journal.test/article"/><published>2026-10-01T10:00:00Z</published><updated>2026-10-05T10:00:00Z</updated><content type="xhtml"><div><p>Bonjour.</p><img src="/hero.jpg"/></div></content><media:group><media:content type="audio/mpeg" url="episode.mp3"/><media:thumbnail url="cover.jpg"/></media:group></entry></feed>`, "https://journal.test/feed");
+  assert.equal(result.items[0].publishedAt?.toISOString(), "2026-10-01T10:00:00.000Z");
+  assert.equal(result.items[0].imageUrl, "https://journal.test/assets/cover.jpg");
+  assert.equal(result.items[0].audioUrl, "https://journal.test/assets/episode.mp3");
+  assert.ok(result.items[0].summary?.includes("<p>Bonjour.</p>"));
+});
+
+test("missing article images remain null and unsafe media URLs are rejected", () => {
+  const result = parseRssOrAtom(`<rss><channel><title>Journal</title><item><title>One</title><link>https://journal.test/one</link><media:thumbnail url="javascript:alert(1)"/></item><item><title>Two</title></item></channel></rss>`, "https://journal.test/feed");
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].imageUrl, null);
+});
+
+test("HTML Atom content preserves embedded images after XML entity decoding", () => {
+  const result = parseRssOrAtom(`<feed><title>Journal</title><entry><id>one</id><title>One</title><link href="https://journal.test/one"/><content type="html">&lt;p&gt;Bonjour &amp;amp; bienvenue.&lt;/p&gt;&lt;img src=&quot;/hero.jpg&quot;&gt;</content></entry></feed>`, "https://journal.test/feed");
+  assert.equal(result.items[0].imageUrl, "https://journal.test/hero.jpg");
+});
