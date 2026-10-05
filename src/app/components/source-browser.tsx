@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { contentTypes, type ContentType } from "@/lib/library";
 
-export type SourceSummary = { id: string; name: string; feedUrl: string; siteUrl: string | null; imageUrl: string | null; kind: string; contentType: Exclude<ContentType, "all">; category: string; lastSyncedAt: string | null; lastSyncError: string | null };
+export type SourceSummary = { id: string; name: string; feedUrl: string; siteUrl: string | null; imageUrl: string | null; kind: string; active: boolean; contentType: Exclude<ContentType, "all">; category: string; lastSyncedAt: string | null; lastSyncError: string | null };
 
 function syncLabel(value: string | null) {
   if (!value) return "Jamais actualisée";

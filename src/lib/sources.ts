@@ -5,6 +5,7 @@ import { youtubeProvider } from "./feed";
 import { rssProvider } from "./rss";
 import type { ContentType } from "./library";
 import { deterministicItemStateId } from "./item-state";
+import { logSourceSyncFailure } from "./source-fetch";
 
 export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
 export type NormalizedItem = {
@@ -48,12 +49,15 @@ export async function runSourceSync(
   recordSuccess: () => Promise<void>,
   recordFailure: (message: string) => Promise<void>,
 ) {
+  const started = performance.now();
   try {
     const imported = await persist(deduplicateNormalizedItems(await provider.sync(source)));
     await recordSuccess();
     return imported;
   } catch (error) {
-    await recordFailure(shortSyncError(error));
+    logSourceSyncFailure(source, error, Math.round(performance.now() - started));
+    try { await recordFailure(shortSyncError(error)); }
+    catch (recordError) { logSourceSyncFailure(source, recordError, Math.round(performance.now() - started)); }
     throw error;
   }
 }
@@ -68,10 +72,9 @@ export async function syncSource(source: SourceSyncInput, { initialImport = fals
   if (!db) throw new Error("Database not connected");
   const database = db;
   const provider = getSourceProvider(source.kind);
-  if (!provider) throw new Error("Ce type de source ne peut pas encore être actualisé.");
   return runSourceSync(
     source,
-    provider,
+    provider || { contentType: "article", async sync() { throw new Error("Ce type de source ne peut pas encore être actualisé."); } },
     async normalized => {
       if (!normalized.length) return 0;
       const inserted = await database.insert(items).values(normalized.map(item => ({ sourceId: source.id, ...item }))).onConflictDoNothing().returning({ id: items.id });

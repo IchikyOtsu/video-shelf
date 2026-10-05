@@ -1,5 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import type { NormalizedItem, SourceProvider } from "./sources";
+import { fetchSourceText } from "./source-fetch";
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false });
 const list = <T,>(value: T | T[] | undefined) => value ? (Array.isArray(value) ? value : [value]) : [];
@@ -25,8 +26,7 @@ export function parseYouTubeFeed(xml: string): NormalizedItem[] {
 export const youtubeProvider: SourceProvider = {
   contentType: "video",
   async sync(source) {
-    const response = await fetch(source.feedUrl, { signal: AbortSignal.timeout(10000), next: { revalidate: 0 }, headers: { "user-agent": "Shelf/1.0" } });
-    if (!response.ok) throw new Error("Le flux YouTube est inaccessible.");
-    return parseYouTubeFeed(await response.text());
+    const response = await fetchSourceText(source.feedUrl, { "user-agent": "Shelf/1.0" });
+    return parseYouTubeFeed(response.text);
   },
 };

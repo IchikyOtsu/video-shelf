@@ -1,6 +1,7 @@
 import { XMLParser } from "fast-xml-parser";
 import type { ContentType } from "./library";
 import type { NormalizedItem, SourceProvider, SourceSyncInput } from "./sources";
+import { fetchSourceText } from "./source-fetch";
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false, trimValues: true });
 const list = <T,>(value: T | T[] | undefined | null) => value == null ? [] : Array.isArray(value) ? value : [value];
@@ -60,8 +61,7 @@ export function parseRssOrAtom(xml: string, feedUrl: string): RssInspection {
 export async function inspectRssFeed(feedUrl: string): Promise<RssInspection> {
   const parsed = new URL(feedUrl);
   if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("Ajoute une URL de flux RSS ou Atom valide.");
-  const response = await fetch(parsed, { signal: AbortSignal.timeout(10_000), headers: { "user-agent": "Shelf/1.0", accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" }, next: { revalidate: 0 } });
-  if (!response.ok) throw new Error("Ce flux RSS ou Atom est inaccessible.");
-  return parseRssOrAtom(await response.text(), response.url || parsed.toString());
+  const response = await fetchSourceText(parsed.toString(), { "user-agent": "Shelf/1.0", accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" });
+  return parseRssOrAtom(response.text, response.url);
 }
 export const rssProvider: SourceProvider = { contentType: "article", async sync(source: SourceSyncInput) { return (await inspectRssFeed(source.feedUrl)).items; } };
