@@ -199,12 +199,9 @@ export default function Home() {
     if (refreshing) return;
     setRefreshing(true); setError(""); setNotice("");
     try {
-      const targets = source ? [source] : sources.filter(value => value.kind === "youtube");
-      const results = await Promise.allSettled(targets.map(value => request("/api/sources/" + value.id + "/sync", { method: "POST" })));
-      const failed = results.filter(result => result.status === "rejected").length;
-      const imported = results.reduce((sum, result) => sum + (result.status === "fulfilled" ? result.value.imported : 0), 0);
+      const { synced, failed, imported } = await request(source ? "/api/sources/" + source.id + "/sync" : "/api/sources/sync", { method: "POST", timeoutMs: 310_000 });
       if (failed) setError(failed + " source(s) indisponible(s). Les autres flux ont été actualisés.");
-      setNotice(imported ? imported + " nouvelle(s) vidéo(s) dans Nouveautés." : "Actualisation terminée. Aucun nouveau contenu récupéré.");
+      setNotice(synced + " source(s) actualisée(s). " + (imported ? imported + " nouveau(x) contenu(s) dans Nouveautés." : "Aucun nouveau contenu récupéré."));
       setFeedRevision(value => value + 1);
       setSourceRevision(value => value + 1);
     } catch (e) { setError((e as Error).message); }
@@ -260,7 +257,7 @@ export default function Home() {
       <button className="account" onClick={() => setSettingsOpen(true)} aria-haspopup="dialog"><span>{(user.name || user.email)[0].toUpperCase()}</span><div><b>{user.name || user.email.split("@")[0]}</b><small>Réglages du compte</small></div><i aria-hidden="true">›</i></button>
     </aside>
     <section className="dashboard-content">
-      <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1>{description && <p>{description}</p>}</div><button className="outline-button" disabled={refreshing || !sources.some(source => source.kind === "youtube")} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
+      <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1>{description && <p>{description}</p>}</div><button className="outline-button" disabled={refreshing || !sources.some(source => source.active)} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
       {error && <div className="feedback error" role="alert"><span>{error}</span><button aria-label="Fermer l’erreur" onClick={() => setError("")}>×</button></div>}
       {notice && <div className="feedback" role="status"><span>{notice}</span><button aria-label="Fermer le message" onClick={() => setNotice("")}>×</button></div>}
       {playing && <section className="watch-panel" ref={player} tabIndex={-1} aria-label="Lecteur vidéo">

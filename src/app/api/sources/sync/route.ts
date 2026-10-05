@@ -5,16 +5,15 @@ import { db } from "@/db";
 import { sources } from "@/db/schema";
 import { cookieName, readSession } from "@/lib/auth";
 import { syncSource } from "@/lib/sources";
-import { uuidPattern } from "@/lib/library";
 import { syncSourceBatch } from "@/lib/source-sync-batch";
 
-export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
+export const maxDuration = 300;
+
+export async function POST() {
   if (!db) return NextResponse.json({ error: "Database not connected" }, { status: 503 });
   const user = await readSession((await cookies()).get(cookieName)?.value);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { id } = await params;
-  if (!uuidPattern.test(id)) return NextResponse.json({ error: "Source invalide." }, { status: 400 });
-  const source = await db.query.sources.findFirst({ where: and(eq(sources.id, id), eq(sources.userId, user.id)) });
-  if (!source) return NextResponse.json({ error: "Source introuvable." }, { status: 404 });
-  return NextResponse.json(await syncSourceBatch([source], syncSource));
+  const activeSources = await db.select({ id: sources.id, kind: sources.kind, feedUrl: sources.feedUrl })
+    .from(sources).where(and(eq(sources.userId, user.id), eq(sources.active, true)));
+  return NextResponse.json(await syncSourceBatch(activeSources, syncSource));
 }
