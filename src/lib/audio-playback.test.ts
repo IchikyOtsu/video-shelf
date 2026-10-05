@@ -27,3 +27,11 @@ test("manual mark-as-new suppresses automatic completion and completed episodes 
 test("metadata events after initialization never reset a seeked position", () => {
   const f = fixture(); const audio = { currentTime: 0, duration: 200 }; f.controller.loaded(audio); audio.currentTime = 90; f.controller.loaded(audio); assert.equal(audio.currentTime, 90);
 });
+
+test("opening an episode without pressing play does not save a reset position or mark it seen", async () => {
+  let writes=0, completed=0;
+  const controller=createAudioPlayback({requirePlaybackStart:true, initialProgress:198,initialDuration:200,write:async () => { writes++; },progress:() => {},complete:() => { completed++; return true; },suppressed:() => false,warning:() => {}});
+  const audio={currentTime:0,duration:200}; controller.loaded(audio); assert.equal(audio.currentTime,0);
+  controller.sample(audio,true); await new Promise(resolve => setImmediate(resolve)); assert.equal(writes,0); assert.equal(completed,0);
+  controller.start(); audio.currentTime=180; controller.sample(audio,true); await new Promise(resolve => setImmediate(resolve)); assert.equal(writes,1); assert.equal(completed,1);
+});

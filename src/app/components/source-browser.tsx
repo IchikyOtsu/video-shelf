@@ -17,7 +17,7 @@ function SourceAvatar({ source }: { source: SourceSummary }) {
   return source.imageUrl && source.imageUrl !== failedImage ? <img className="avatar" src={source.imageUrl} alt="" loading="lazy" decoding="async" referrerPolicy="no-referrer" ref={image => { if (image?.complete && image.naturalWidth === 0) setFailedImage(source.imageUrl); }} onError={() => setFailedImage(source.imageUrl)} /> : <span className="avatar">{source.name[0]?.toUpperCase()}</span>;
 }
 
-export function SourceBrowser({ sources, loading, refreshing, cleaningShorts, cleanupMore, onAdd, onOpen, onRefresh, onRemove, onRemoveShorts }: {
+export function SourceBrowser({ sources, loading, refreshing, cleaningShorts, cleanupMore, onAdd, onOpen, onRefresh, onEdit, onRemove, onRemoveShorts }: {
   sources: SourceSummary[];
   loading: boolean;
   refreshing: boolean;
@@ -26,6 +26,7 @@ export function SourceBrowser({ sources, loading, refreshing, cleaningShorts, cl
   onAdd(): void;
   onOpen(source: SourceSummary): void;
   onRefresh(source: SourceSummary): void;
+  onEdit(source: SourceSummary): void;
   onRemove(source: SourceSummary): void;
   onRemoveShorts(): void;
 }) {
@@ -41,7 +42,7 @@ export function SourceBrowser({ sources, loading, refreshing, cleaningShorts, cl
     <label className="source-search"><span>⌕</span><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Rechercher une source…" aria-label="Rechercher une source" /></label>
     {loading ? <p role="status" className="list-loading">Chargement des sources…</p> : groups.length ? groups.map(group => {
       const isCollapsed = collapsed.has(group.type);
-      return <section className="source-group" key={group.type}><button className="source-group-heading" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(group.type)) next.delete(group.type); else next.add(group.type); return next; })}><span>{contentTypes[group.type].icon} {contentTypes[group.type].label}</span><small>{group.sources.length}</small><span aria-hidden="true">{isCollapsed ? "＋" : "−"}</span></button>{!isCollapsed ? <div className="source-list">{group.sources.map(source => <article className="source-row" key={source.id}><SourceAvatar source={source} /><div className="source-details"><h3>{source.name}</h3><p>{source.kind === "youtube" ? "YouTube" : source.kind} · {contentTypes[source.contentType].label}</p><small className={source.lastSyncError ? "sync-warning" : ""}>{source.lastSyncError ? "⚠ " + source.lastSyncError : syncLabel(source.lastSyncedAt)}</small></div><div className="source-actions"><button className="outline-button" onClick={() => onOpen(source)}>Voir l’historique</button><button className="quiet-button" disabled={refreshing} onClick={() => onRefresh(source)}>Actualiser</button><a href={source.siteUrl || source.feedUrl} target="_blank" rel="noreferrer" aria-label={"Ouvrir " + source.name}>↗</a><button className="remove-source" aria-label={"Supprimer " + source.name} onClick={() => onRemove(source)}>×</button></div></article>)}</div> : null}</section>;
+      return <section className="source-group" key={group.type}><button className="source-group-heading" aria-expanded={!isCollapsed} onClick={() => setCollapsed(previous => { const next = new Set(previous); if (next.has(group.type)) next.delete(group.type); else next.add(group.type); return next; })}><span>{contentTypes[group.type].icon} {contentTypes[group.type].label}</span><small>{group.sources.length}</small><span aria-hidden="true">{isCollapsed ? "＋" : "−"}</span></button>{!isCollapsed ? <div className="source-list">{group.sources.map(source => <article className="source-row" key={source.id}><SourceAvatar source={source} /><div className="source-details"><h3>{source.name}</h3><p>{source.kind === "youtube" ? "YouTube" : source.kind} · {contentTypes[source.contentType].label}</p><small className={source.lastSyncError ? "sync-warning" : ""}>{source.lastSyncError ? "⚠ " + source.lastSyncError : syncLabel(source.lastSyncedAt)}</small></div><div className="source-actions"><button className="quiet-button" onClick={() => onEdit(source)} aria-label={"Modifier " + source.name}>Modifier</button><button className="outline-button" onClick={() => onOpen(source)}>Voir l’historique</button><button className="quiet-button" disabled={refreshing} onClick={() => onRefresh(source)}>Actualiser</button><a href={source.siteUrl || source.feedUrl} target="_blank" rel="noreferrer" aria-label={"Ouvrir " + source.name}>↗</a><button className="remove-source" aria-label={"Supprimer " + source.name} onClick={() => onRemove(source)}>×</button></div></article>)}</div> : null}</section>;
     }) : <div className="dashboard-empty"><span>◉</span><h2>{query ? "Aucune source trouvée" : "Choisis tes premières sources"}</h2><p>{query ? "Essaie un autre nom ou fournisseur." : "Suis une chaîne YouTube pour alimenter tes nouveautés."}</p>{!query ? <button className="dark-button" onClick={onAdd}>Ajouter des sources</button> : null}</div>}
   </section>;
 }

@@ -25,9 +25,9 @@ export function parseProgressUpdate(body: unknown, now = Date.now()): ProgressUp
   const duration = value.durationSeconds;
   const observed = value.observedAt === undefined ? now : value.observedAt;
   if (!uuidPattern.test(itemId) || typeof progress !== "number" || !Number.isFinite(progress) || progress < 0 || progress > MAX_MEDIA_DURATION_SECONDS + 60 ||
-    (duration !== undefined && (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0 || duration > MAX_MEDIA_DURATION_SECONDS)) ||
+    (duration !== undefined && duration !== null && (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0 || duration > MAX_MEDIA_DURATION_SECONDS)) ||
     typeof observed !== "number" || !Number.isFinite(observed) || observed <= 0 || observed > now + 5 * 60_000) throw new ProgressValidationError("Progression invalide.");
-  const durationSeconds = duration === undefined ? null : Math.floor(duration);
+  const durationSeconds = duration == null ? null : Math.floor(duration);
   if (durationSeconds !== null && progress > durationSeconds + 60) throw new ProgressValidationError("Progression invalide.");
   return {
     itemId,

@@ -14,6 +14,10 @@ A personal feed aggregator with a unified inbox, a permanent collected library, 
 
 Opening a video resumes its account-scoped position from Neon. Shelf samples active playback locally and persists integer-second progress about every 10 seconds, plus pause/close lifecycle saves. A video becomes seen after 90% of actual playback or when YouTube reports that it ended; manual seen/new actions remain authoritative and never erase progress.
 
+Sources can be edited from their management screen. Empty title/site/image fields resolve from the provider when saving; explicit values are kept. Link changes are inspected before persistence. Editing never imports or deletes items and preserves saved/read/progress states.
+
+Podcasts resume like videos, with 90% completion, and only begin recording after playback starts. Starting a previously seen podcast or interacting with a previously read article marks it new for that session; explicit manual-new actions suppress automatic completion until the panel is reopened. Article scroll progress is account-scoped, represented as a percentage in the existing progress fields (`progress_seconds` 0–100, `duration_seconds` 100 for articles; media retains seconds). Opening alone never changes state or erases a saved position. Full articles become read at 90% after at least 10 seconds of attentive reading; summary-only feeds require an explicit read action. Reader font/size/width choices are per device, and fullscreen reading supports keyboard focus and Escape.
+
 ## Database (Vercel + Neon)
 
 This app uses Postgres through Drizzle. The schema supports users, sources, imported items, and per-user reading state.
