@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 /* eslint-disable @next/next/no-img-element */
 import { FormEvent, useEffect, useState } from "react";
 import { request } from "@/lib/client";
+import { ThemeSetting } from "./theme-setting";
 
 type Account = {
   id: string;
@@ -195,6 +196,7 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
           </div>
         ) : (
           <div className="settings-body">
+            <ThemeSetting />
             <section>
               <h3>Profil</h3>
               <p>
