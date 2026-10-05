@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PgDialect } from "drizzle-orm/pg-core";
-import { buildItemCondition, itemStateJoin } from "./item-query";
+import { buildItemCondition, itemDateOrder, itemStateJoin } from "./item-query";
 
 const userId = "22222222-2222-4222-8222-222222222222";
 const sourceId = "11111111-1111-4111-8111-111111111111";
@@ -42,4 +42,14 @@ test("state joins select only the newest legacy state for an item", () => {
   assert.match(query.sql, /not exists/);
   assert.match(query.sql, /newer_item_state/);
   assert.ok(query.params.includes(userId));
+});
+
+test("newest sorts YouTube by publication date and always places missing dates last", () => {
+  const query = new PgDialect().sqlToQuery(itemDateOrder("newest"));
+  assert.match(query.sql, /case when "sources"\."kind" = 'youtube' then "items"\."published_at" else coalesce\("items"\."published_at", "items"\."created_at"\) end desc nulls last/);
+});
+
+test("oldest also keeps undated YouTube videos after dated items", () => {
+  const query = new PgDialect().sqlToQuery(itemDateOrder("oldest"));
+  assert.match(query.sql, /end asc nulls last/);
 });

@@ -12,6 +12,13 @@ export type ItemFilters = {
 export const itemRead = sql<boolean>`coalesce(${itemStates.read}, false)`;
 export const itemSaved = sql<boolean>`coalesce(${itemStates.saved}, false)`;
 
+// A YouTube video imported without a publication date is not a new release.
+// Keep RSS's existing import-time fallback, but put undated YouTube items last.
+export function itemDateOrder(sort: "newest" | "oldest") {
+  const date = sql`case when ${sources.kind} = 'youtube' then ${items.publishedAt} else coalesce(${items.publishedAt}, ${items.createdAt}) end`;
+  return sort === "oldest" ? sql`${date} asc nulls last` : sql`${date} desc nulls last`;
+}
+
 export function itemStateJoin(userId: string) {
   // Some databases created before the unique constraint can contain an old
   // state plus a newer state for the same user/item. Joining only the newest

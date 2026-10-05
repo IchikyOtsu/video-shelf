@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { itemStates, items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
@@ -77,7 +77,14 @@ export async function syncSource(source: SourceSyncInput, { initialImport = fals
     provider || { contentType: "article", async sync() { throw new Error("Ce type de source ne peut pas encore être actualisé."); } },
     async normalized => {
       if (!normalized.length) return 0;
-      const inserted = await database.insert(items).values(normalized.map(item => ({ sourceId: source.id, ...item }))).onConflictDoNothing().returning({ id: items.id });
+      const changed = await database.insert(items).values(normalized.map(item => ({ sourceId: source.id, ...item })))
+        .onConflictDoUpdate({
+          target: [items.sourceId, items.guid],
+          set: { publishedAt: sql`excluded."published_at"` },
+          setWhere: sql`${items.publishedAt} is null and excluded."published_at" is not null`,
+        }).returning({ id: items.id, inserted: sql<boolean>`xmax = 0` });
+      // Date repairs preserve item IDs and seen/saved state, and are not imports.
+      const inserted = changed.filter(item => item.inserted);
       if (initialImport && !source.userId) throw new Error("Initial source import requires an owner.");
       const states = initialImportStates(source.userId || "", inserted.map(item => item.id), initialImport);
       if (states.length) await database.insert(itemStates).values(states);
