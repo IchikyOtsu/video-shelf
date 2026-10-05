@@ -11,6 +11,7 @@ type Account = {
   name: string | null;
   emailVerified: boolean;
   totpEnabled: boolean;
+  dailyDigestEnabled: boolean;
 };
 type Props = { onClose(): void; onSignOut(): void };
 export function AccountSettings({ onClose, onSignOut }: Props) {
@@ -229,6 +230,19 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
                   Renvoyer le lien
                 </button>
               )}
+            </section>
+            <section>
+              <h3>Emails</h3>
+              <label className="digest-setting">
+                <input type="checkbox" checked={account.dailyDigestEnabled ?? true} disabled={busy !== ""} onChange={async event => {
+                  const data = await action("/api/account/digest", { enabled: event.target.checked });
+                  if (data) {
+                    setAccount(value => value && { ...value, dailyDigestEnabled: data.enabled });
+                    setNotice(data.enabled ? "Le digest quotidien est activé." : "Le digest quotidien est désactivé.");
+                  }
+                }} />
+                <span><b>Digest quotidien</b><small>Un email après l’actualisation automatique, uniquement s’il y a de nouveaux contenus. Aucun email lors d’une actualisation manuelle.</small></span>
+              </label>
             </section>
             <section>
               <h3>Sécurité</h3>

@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
 import { itemStates, items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
@@ -6,7 +6,7 @@ import { rssProvider } from "./rss";
 import type { ContentType } from "./library";
 import { deterministicItemStateId } from "./item-state";
 import { checkSyncDeadline, SourceSyncDeferredError, SYNC_SOURCE_BUDGET_MS } from "./sync-control";
-import { metadataUpdateSet } from "./item-sync-update";
+import { insertedSyncResult, itemImportStatement, type CronImportContext } from "./item-import";
 import { logSourceSyncFailure } from "./source-fetch";
 
 export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
@@ -45,10 +45,10 @@ export function initialImportStates(userId: string, itemIds: string[], initialIm
   return initialImport ? itemIds.map(itemId => ({ id: deterministicItemStateId(userId, itemId), userId, itemId, read: true })) : [];
 }
 
-export async function runSourceSync(
+export async function runSourceSync<T>(
   source: SourceSyncInput,
   provider: SourceProvider,
-  persist: (rows: NormalizedItem[]) => Promise<number>,
+  persist: (rows: NormalizedItem[]) => Promise<T>,
   recordSuccess: () => Promise<void>,
   recordFailure: (message: string) => Promise<void>,
   context?: SourceSyncContext,
@@ -76,7 +76,7 @@ export function getSourceProvider(kind: string) {
   return providers[kind];
 }
 
-export async function syncSource(source: SourceSyncInput, { initialImport = false, deadlineMs = Date.now() + SYNC_SOURCE_BUDGET_MS }: { initialImport?: boolean; deadlineMs?: number } = {}) {
+export async function syncSourceDetailed(source: SourceSyncInput, { initialImport = false, deadlineMs = Date.now() + SYNC_SOURCE_BUDGET_MS, cron }: { initialImport?: boolean; deadlineMs?: number; cron?: CronImportContext } = {}) {
   if (!db) throw new Error("Database not connected");
   const database = db;
   checkSyncDeadline(deadlineMs);
@@ -100,21 +100,23 @@ export async function syncSource(source: SourceSyncInput, { initialImport = fals
     source,
     provider,
     async normalized => {
-      if (!normalized.length) return 0;
-      const changed = await database.insert(items).values(normalized.map(item => ({ sourceId: source.id, ...item })))
-        .onConflictDoUpdate({
-          target: [items.sourceId, items.guid],
-          set: metadataUpdateSet(),
-        }).returning({ id: items.id, inserted: sql<boolean>`xmax = 0` });
-      // Metadata updates preserve IDs, creation time and all user state.
-      const inserted = changed.filter(item => item.inserted);
+      if (!normalized.length) return insertedSyncResult([]);
+      const changed = await database.execute<{ id: string; inserted: boolean }>(itemImportStatement(source.id, normalized, cron));
+      if (cron && !changed.rows.length) throw new SourceSyncDeferredError();
+      const result = insertedSyncResult(changed.rows);
       if (initialImport && !source.userId) throw new Error("Initial source import requires an owner.");
-      const states = initialImportStates(source.userId || "", inserted.map(item => item.id), initialImport);
+      const states = initialImportStates(source.userId || "", result.insertedItemIds, initialImport);
       if (states.length) await database.insert(itemStates).values(states);
-      return inserted.length;
+      return result;
     },
     async () => { await database.update(sources).set({ lastSyncedAt: new Date(), lastSyncError: null }).where(eq(sources.id, source.id)); },
     async message => { await database.update(sources).set({ lastSyncError: message }).where(eq(sources.id, source.id)); },
     context,
   );
+}
+
+
+// Manual callers only need the count. No run context means no digest ledger.
+export async function syncSource(source: SourceSyncInput, options: { initialImport?: boolean; deadlineMs?: number } = {}) {
+  return (await syncSourceDetailed(source, options)).imported;
 }
