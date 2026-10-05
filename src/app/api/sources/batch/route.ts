@@ -1,3 +1,4 @@
+import { checkRateLimit } from "@/lib/rate-limit";
 import { and, inArray, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -10,9 +11,10 @@ import { syncSource } from "@/lib/sources";
 export async function POST(request: Request) {
   const user = await readSession((await cookies()).get(cookieName)?.value);
   if (!user) return NextResponse.json({ error: "Connexion requise." }, { status: 401 });
+  if (await checkRateLimit("source-batch",user.id,10,60 * 60_000)) return NextResponse.json({ error:"Trop de requêtes. Réessaie plus tard." },{ status:429 });
   if (!db) return NextResponse.json({ error: "Base de données indisponible." }, { status: 503 });
   let parsed;
-  try { parsed = parseYouTubeBatch(await request.json()); }
+  try { const body = await request.json(); parsed = { ...parseYouTubeBatch(body), category:typeof body.category === "string" ? body.category.trim().slice(0,80) || "Non classé" : "Non classé" }; }
   catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Sélection invalide." }, { status: 400 }); }
   const { candidates, failed: validationFailures } = parsed;
   if (!candidates.length) return NextResponse.json({ added: [], alreadyExisting: [], failed: validationFailures, imported: 0 });
@@ -21,7 +23,7 @@ export async function POST(request: Request) {
     const existing = await db.select({ feedUrl: sources.feedUrl, name: sources.name }).from(sources).where(and(eq(sources.userId, user.id), inArray(sources.feedUrl, feedUrls)));
     const existingFeeds = new Set(existing.map(source => source.feedUrl));
     const fresh = candidates.filter(source => !existingFeeds.has(source.feedUrl));
-    const inserted = fresh.length ? await db.insert(sources).values(fresh.map(source => ({ userId: user.id, name: source.name, feedUrl: source.feedUrl, siteUrl: source.siteUrl, imageUrl: source.imageUrl, kind: source.kind, contentType: source.contentType, category: "Non classé" }))).onConflictDoNothing().returning() : [];
+    const inserted = fresh.length ? await db.insert(sources).values(fresh.map(source => ({ userId: user.id, name: source.name, feedUrl: source.feedUrl, siteUrl: source.siteUrl, imageUrl: source.imageUrl, kind: source.kind, contentType: source.contentType, category: parsed.category }))).onConflictDoNothing().returning() : [];
     const insertedFeeds = new Set(inserted.map(source => source.feedUrl));
     const alreadyExisting = candidates.filter(source => existingFeeds.has(source.feedUrl) || !insertedFeeds.has(source.feedUrl)).map(source => ({ channelId: source.channelId, name: source.name }));
     const synced = await syncBatchSources(inserted, source => syncSource(source, { initialImport: true }));

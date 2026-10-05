@@ -197,6 +197,7 @@ export function AccountSettings({ onClose, onSignOut }: Props) {
         ) : (
           <div className="settings-body">
             <ThemeSetting />
+            <section className="settings-form"><h3>Exporter mes données</h3><p>Télécharge tes abonnements et tes contenus enregistrés.</p><div className="export-actions"><a className="outline-button" href="/api/export?format=opml">Sources · OPML</a><a className="outline-button" href="/api/export?format=json">Enregistrés · JSON</a><a className="outline-button" href="/api/export?format=csv">Enregistrés · CSV</a></div></section>
             <section>
               <h3>Profil</h3>
               <p>

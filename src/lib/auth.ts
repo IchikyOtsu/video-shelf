@@ -1,3 +1,4 @@
+import { sessionPurpose } from "./request-security";
 import { SignJWT, jwtVerify } from "jose";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
@@ -13,14 +14,14 @@ export function resolveAuthSecret(value = process.env.AUTH_SECRET, environment =
 }
 
 export async function createSession(user: Session) {
-  return new SignJWT(user).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime("30d").sign(resolveAuthSecret());
+  return new SignJWT({ ...user, purpose:"session" }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime("30d").sign(resolveAuthSecret());
 }
 export async function readSession(token?: string): Promise<Session | null> {
   if (!token) return null;
   const secret = resolveAuthSecret();
   try {
     const session = (await jwtVerify(token, secret)).payload as unknown as Session;
-    if (!session.id || !db) return null;
+    if (!sessionPurpose(session as Session & { purpose?:unknown }) || !session.id || !db) return null;
     const user = await db.query.users.findFirst({ where: eq(users.id, session.id), columns: { sessionVersion: true } });
     if (!user || (session.sessionVersion ?? 0) !== user.sessionVersion) return null;
     return session;

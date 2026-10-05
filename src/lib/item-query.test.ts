@@ -25,7 +25,7 @@ test("source history with view=all has no seen-state restriction", () => {
 test("bulk-compatible filters retain user, source and escaped search scoping", () => {
   const query = compile("inbox", "100% science");
   assert.deepEqual(query.params.slice(0, 4), [userId, "video", sourceId, false]);
-  assert.deepEqual(query.params.slice(4), ["%100\\% science%", "%100\\% science%"]);
+  assert.deepEqual(query.params.slice(4), Array(6).fill("%100\\% science%"));
 });
 
 test("content type filtering is independent from the library view", () => {

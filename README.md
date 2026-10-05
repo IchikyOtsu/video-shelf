@@ -62,11 +62,11 @@ Article cards show publisher artwork, a clean excerpt, author, publication date,
 
 RSS/Atom artwork is extracted from Media RSS thumbnails/content/groups, image enclosures, iTunes artwork, direct image fields, or the first useful inline image. Relative and lazy/responsive images are supported; tiny tracking pixels, non-image media and unsafe URL schemes are excluded. Feed artwork is the final item fallback and is saved as the source avatar for newly added RSS sources. Image attachments do not misclassify articles as podcasts. Atom publication timestamps take precedence over modification timestamps.
 
-Publisher HTML stays inert in storage. The items API produces decoded plain-text excerpts (up to 320 characters) and strips script/style/template content. Legacy HTML summaries are also cleaned immediately; legacy image values incorrectly pointing at the feed itself are ignored so embedded artwork can be recovered. Synchronizing existing feed entries refreshes their persisted metadata. No article page scraping, image proxy requests, or database migration is required; feeds without artwork use the visual fallback.
+Publisher HTML stays inert in storage. The items API produces decoded plain-text excerpts (up to 320 characters) and strips script/style/template content. Legacy HTML summaries are also cleaned immediately; legacy image values incorrectly pointing at the feed itself are ignored so embedded artwork can be recovered. Synchronizing existing feed entries refreshes their persisted metadata. RSS synchronization does not scrape article pages or proxy images; feeds without artwork use the visual fallback.
 
 ## YouTube experience
 
-Search by channel name, @handle, or channel URL. Search waits 400 ms after typing and cancels outdated requests. Results support multi-selection across successive searches, then `/api/sources/batch` validates, inserts and synchronizes up to 50 channels with partial-failure reporting. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. A new source imports one page of recent videos. Later API syncs follow additional pages only until encountering the first source-owned, already-known video (or reaching the end), so more than 50 publications between syncs are not silently missed. Known videos in the boundary page are included for metadata refresh; unknown videos older than the boundary are not imported.
+Search by channel name, @handle, or channel URL. Search runs only on Enter or the Rechercher button, cancels outdated requests, and reuses matching YouTube responses for up to one hour. Direct channel links and @handles avoid search.list calls. Results support multi-selection across successive searches, then `/api/sources/batch` validates, inserts and synchronizes up to 50 channels with partial-failure reporting. From that point onward Shelf keeps everything it collects, deduplicated by `(sourceId, guid)`. A new source imports one page of recent videos. Later API syncs follow additional pages only until encountering the first source-owned, already-known video (or reaching the end), so more than 50 publications between syncs are not silently missed. Known videos in the boundary page are included for metadata refresh; unknown videos older than the boundary are not imported.
 
 Configure the server-only `YOUTUBE_API_KEY` with YouTube Data API v3 enabled for channel search and synchronization. With a key, sync reconstructs the videos-only playlist (`UULF` + channel ID suffix) directly and calls `playlistItems.list` with up to 50 entries per page. There is no `channels.list`, `search.list`, or per-video detail call during synchronization. Each list request costs one quota unit. Successful pages are cached five minutes and concurrent duplicate requests share one in-flight request on a warm instance. Cached pages are rechecked against the current source's stored GUIDs; cached results do not determine when another account stops pagination. Lists are fetched fresh when the local cache expires. Cold instances and extra catch-up pages can add requests, so these are reuse policies rather than a strict daily quota ceiling. Memory cache identifiers contain resource parameters or an `api`/`no-api` scope, never the API credential.
 
@@ -113,3 +113,37 @@ RSS `content:encoded` and Atom `content` are retained separately in `items.conte
 Podcast cards open native HTML audio controls using the captured `audioUrl`. Playback resumes after metadata loads, saves progress through the existing ownership-checked progress endpoint, flushes on pause/seek/close/page exit, and uses the same 90% seen / 95% resume-reset rules as YouTube. A manual mark-as-new suppresses automatic completion during that opening. Browser playback errors and missing/unsafe audio URLs show an external source fallback. Native controls expose play/pause, seeking, elapsed time and duration. YouTube continues to use its existing player unchanged.
 
 Feed inspection parses XML structure after a successful fetch regardless of MIME type, including generic XML or plain text. RSS 2.0, RSS 1.0/RDF and Atom (including namespace-prefixed Atom) are supported. Malformed XML, non-feed XML, HTTP failure, network failure and timeout remain distinct. Existing HTTP(S)-only/no-credentials URL validation and ten-second request/body timeout remain; RSS response bodies are capped at 5 MiB. External entity/DOCTYPE documents are rejected. No MIME-only rejection is used.
+
+
+## Library and source improvements
+
+The latest automatic cron run is visible above the library. Its source/import/email
+counts are scoped to the signed-in account; manual refresh does not affect this
+status or send a digest. Source health distinguishes never synced, OK, temporary
+unavailability, and persistent errors (at least three failures spanning three days).
+Pausing/resuming sources is explicit; paused sources are skipped by automatic/global sync.
+
+Categories can be selected or created when adding RSS/YouTube sources, and applied
+to multiple selected sources in Sources. The library combines category, source,
+content type, read/in-progress and saved-only filters. Search covers title, source,
+author, feed content and cached extracted article content. These filters also apply
+to “mark all current results as seen”. Account settings export grouped OPML sources
+or saved content as JSON/CSV.
+
+RSS reader formatting retains safe tables/captions, nested lists, code, quotations,
+definition lists and lazy images. For excerpts, “Récupérer l’article complet” makes
+one explicit request with a public-IP-pinned transport and Readability extraction,
+then stores sanitized content. Extraction is never automatic on sync/open: a fresh
+cache lasts 24 hours, concurrent requests share a lease, failed attempts wait ten
+minutes, and each user is limited to five requests/minute and thirty/day. Unavailable
+articles retain their source link. Saved/read/playback state is independent of this cache.
+
+**Deployment:** apply `npm run db:migrate` using the production database's
+`DATABASE_URL` before deploying this change. Migration 0014 adds source failure
+tracking, durable cron source ownership and `article_documents`. If deployments use separate Neon branches, apply
+the migration to each database that will run this version. The migration does not
+alter existing source IDs, subscriptions or item states.
+
+See [the targeted security review](docs/security-audit.md) for implemented fixes,
+checks and remaining limits. API mutation clients must send a same-origin Origin
+header; browser requests do this automatically. The authenticated cron GET is unchanged.

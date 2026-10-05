@@ -15,8 +15,8 @@ export async function GET(request: Request) {
   let filters;
   try { filters = parseLibraryQuery(new URL(request.url).searchParams); }
   catch { return NextResponse.json({ error: "Filtres invalides." }, { status: 400 }); }
-  const { view, sourceId, offset, query, sort, contentType } = filters;
-  const itemFilters = { view, sourceId, query, contentType };
+  const { offset, sort } = filters;
+  const itemFilters = filters;
   const condition = buildItemCondition(itemFilters, user.id);
   const stateJoin = itemStateJoin(user.id);
   try {
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
         inbox: sql<number>`count(*) filter (where not ${itemRead})::int`,
         archive: sql<number>`count(*) filter (where ${itemRead})::int`,
         saved: sql<number>`count(*) filter (where ${itemSaved})::int`,
-      }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(buildItemCondition({ ...itemFilters, view: "all", sourceId: "", query: "" }, user.id)),
+      }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(buildItemCondition({ ...itemFilters, view: "all", sourceId: "", query: "", category:"", status:"all", savedOnly:false }, user.id)),
     ]);
     const previews = rows.map(({ sourceFeedUrl, ...item }) => {
       if (item.mediaType === "video") return item;

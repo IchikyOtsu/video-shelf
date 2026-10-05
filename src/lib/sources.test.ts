@@ -1,3 +1,4 @@
+import { inspectRssFeed } from "./rss";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deduplicateNormalizedItems, getSourceProvider, isInitialSourceSync, initialImportStates, runSourceSync, type NormalizedItem } from "./sources";
@@ -64,7 +65,7 @@ test("mixed YouTube and RSS batch imports both providers and isolates an HTTP fa
   const persisted: Record<string, NormalizedItem[]> = {};
   const succeeded: string[] = [];
   const failed: string[] = [];
-  const result = await syncSourceBatch(mixed, input => runSourceSync(input, getSourceProvider(input.kind), async rows => {
+  const result = await syncSourceBatch(mixed, input => runSourceSync(input, input.kind === "rss" ? { contentType:"article", sync:async source => (await inspectRssFeed(source.feedUrl,globalThis.fetch)).items } : getSourceProvider(input.kind), async rows => {
     persisted[input.id] = rows;
     return rows.length;
   }, async () => { succeeded.push(input.id); }, async message => { failed.push(message); }));

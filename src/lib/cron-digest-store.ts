@@ -19,8 +19,8 @@ export function createCronDigestStore(query: DigestQuery) {
     },
     async seed(runId: string, token: string) {
       await query(sql`with active as (select id from cron_runs where ${lease(runId, token)} and phase = 'syncing' and not initialized for update),
-        queued as (insert into cron_run_sources (run_id, source_id)
-          select active.id, sources.id from sources cross join active where sources.active and (sources.last_synced_at is null or sources.last_synced_at <= now() - interval '1 hour')
+        queued as (insert into cron_run_sources (run_id, source_id, user_id)
+          select active.id, sources.id, sources.user_id from sources cross join active where sources.active and (sources.last_synced_at is null or sources.last_synced_at <= now() - interval '1 hour')
           on conflict do nothing returning source_id)
         update cron_runs set initialized = true, summary = jsonb_build_object('skipped',
           (select count(*) from sources where sources.active) - (select count(*) from queued)) where id in (select id from active) returning id`);

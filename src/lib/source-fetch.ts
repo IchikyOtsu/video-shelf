@@ -20,12 +20,12 @@ export function sourceHostname(feedUrl: string) {
 }
 
 // Cover response body reads as well as headers with the same timeout.
-export async function fetchSourceText(feedUrl: string, headers: HeadersInit = {}, timeoutMs = 10_000, maxBytes = Infinity) {
+export async function fetchSourceText(feedUrl: string, headers: HeadersInit = {}, timeoutMs = 10_000, maxBytes = Infinity, fetcher: typeof fetch = fetch) {
   const hostname = sourceHostname(feedUrl);
   const signal = AbortSignal.timeout(timeoutMs);
   try {
-    const response = await fetch(feedUrl, { signal, headers, cache: "no-store" });
-    if (!response.ok) throw new SourceFetchError("HTTP_ERROR", sourceHostname(response.url || feedUrl), response.status);
+    const response = await fetcher(feedUrl, { signal, headers, cache: "no-store" });
+    if (!response.ok) { await response.body?.cancel(); throw new SourceFetchError("HTTP_ERROR", sourceHostname(response.url || feedUrl), response.status); }
     let text: string;
     if (Number.isFinite(maxBytes) && response.body) {
       const reader = response.body.getReader(); const decoder = new TextDecoder(); const parts: string[] = []; let size = 0;

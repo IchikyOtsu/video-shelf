@@ -24,7 +24,7 @@ export const contentTypes = {
 } as const;
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type LibraryQuery = { view: LibraryView; sourceId: string; offset: number; sort: "newest" | "oldest"; query: string; contentType: ContentType };
+export type LibraryQuery = { view: LibraryView; sourceId: string; offset: number; sort: "newest" | "oldest"; query: string; contentType: ContentType; category?:string; status?:"all" | "unread" | "read" | "in_progress"; savedOnly?:boolean };
 
 export function parseLibraryQuery(params: URLSearchParams): LibraryQuery {
   const view = params.get("view") || "inbox";
@@ -35,7 +35,9 @@ export function parseLibraryQuery(params: URLSearchParams): LibraryQuery {
   const query = (params.get("q") || "").trim();
   const contentType = params.get("type") || "all";
   if (!(view in libraryViews) || !Object.hasOwn(libraryViews, view) || !(contentType in contentTypes) || !Object.hasOwn(contentTypes, contentType) || (sourceId && !uuidPattern.test(sourceId)) || !Number.isSafeInteger(offset) || offset < 0 || query.length > 200) throw new Error("Filtres invalides.");
-  return { view: view as LibraryView, sourceId, offset, sort, query, contentType: contentType as ContentType };
+  const category = (params.get("category") || "").trim(); const status = params.get("status") || "all"; const savedOnly = params.get("saved") === "true";
+  if (category.length > 80 || !["all","unread","read","in_progress"].includes(status)) throw new Error("Filtres invalides.");
+  return { ...(category ? { category } : {}), ...(status !== "all" ? { status:status as "unread" | "read" | "in_progress" } : {}), ...(savedOnly ? { savedOnly:true } : {}), view: view as LibraryView, sourceId, offset, sort, query, contentType: contentType as ContentType };
 }
 
 export function parseStateChange(body: unknown): { ids: string[]; read?: boolean; saved?: boolean } {
