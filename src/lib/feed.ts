@@ -1,6 +1,6 @@
 import { XMLParser } from "fast-xml-parser";
 import type { NormalizedItem, SourceProvider } from "./sources";
-import { fetchSourceText } from "./source-fetch";
+import { fetchYouTubeFeedWithFallback } from "./youtube-fallback";
 
 const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false });
 const list = <T,>(value: T | T[] | undefined) => value ? (Array.isArray(value) ? value : [value]) : [];
@@ -26,7 +26,7 @@ export function parseYouTubeFeed(xml: string): NormalizedItem[] {
 export const youtubeProvider: SourceProvider = {
   contentType: "video",
   async sync(source) {
-    const response = await fetchSourceText(source.feedUrl, { "user-agent": "Shelf/1.0" });
-    return parseYouTubeFeed(response.text);
+    const response = await fetchYouTubeFeedWithFallback(source.feedUrl);
+    return "xml" in response ? parseYouTubeFeed(response.xml) : response.items;
   },
 };
