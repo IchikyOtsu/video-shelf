@@ -13,6 +13,7 @@ import { SourceBrowser, type SourceSummary } from "./components/source-browser";
 import { YouTubePlayer } from "./components/youtube-player";
 import { ArticleReader } from "./components/article-reader";
 import { PodcastPlayer } from "./components/podcast-player";
+import { EditSource } from "./components/edit-source";
 import { AccountSettings } from "./components/account-settings";
 
 type User = { id: string; email: string; name: string | null };
@@ -67,6 +68,7 @@ export default function Home() {
   const [query, setQuery] = useState(() => initialFeedFilters().query);
   const [search, setSearch] = useState(() => initialFeedFilters().query);
   const [sort, setSort] = useState(() => initialFeedFilters().sort);
+  const [editingSource, setEditingSource] = useState<Source | null>(null);
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [error, setError] = useState("");
@@ -78,6 +80,7 @@ export default function Home() {
   const [changing, setChanging] = useState(false);
   const [feedRevision, setFeedRevision] = useState(0);
   const [sourceRevision, setSourceRevision] = useState(0);
+  const [readerExpanded, setReaderExpanded] = useState(false);
   const [playing, setPlaying] = useState<FeedItem | null>(null);
   const [completionSuppressedId, setCompletionSuppressedId] = useState<string | null>(null);
   const [cleaningShorts, setCleaningShorts] = useState(false);
@@ -155,10 +158,31 @@ export default function Home() {
     if (source) setContentType(sources.find(value => value.id === source)?.contentType || "all");
     if (next !== "sources") setLoading(true);
   }
-  async function changeState(ids: string[], fields: ItemStateChange) {
+  useEffect(() => {
+    if (!readerExpanded) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const background = [...document.querySelectorAll<HTMLElement>(".side, .dashboard-content > :not(.watch-panel)")];
+    const inertStates = background.map(element => element.inert);
+    background.forEach(element => { element.inert = true; });
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    player.current?.focus({ preventScroll:true });
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setReaderExpanded(false);
+      if (event.key !== "Tab" || !player.current) return;
+      const controls = [...player.current.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input, select, [tabindex="0"]')];
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === player.current)) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    window.addEventListener("keydown", escape);
+    return () => { background.forEach((element,index) => { element.inert = inertStates[index]; }); document.body.style.overflow = previous; window.removeEventListener("keydown", escape); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll:true }); };
+  }, [readerExpanded]);
+  async function changeState(ids: string[], fields: ItemStateChange, automatic = false) {
     if (changeLock.current || !ids.length) return false;
     changeLock.current = true; setChanging(true); setError("");
-    if (playing && ids.includes(playing.id) && fields.read !== undefined) setCompletionSuppressedId(fields.read ? null : playing.id);
+    if (playing && ids.includes(playing.id) && fields.read !== undefined) setCompletionSuppressedId(fields.read || automatic ? null : playing.id);
+    const previousSuppression = completionSuppressedId;
     const previousPage = page;
     const previousPlaying = playing;
     const previousSelection = selected;
@@ -172,7 +196,7 @@ export default function Home() {
         method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids.slice(start, start + 100), ...fields }),
       });
       if (fields.read !== undefined) setNotice(fields.read ? "Contenu marqué comme vu. Il reste dans la Bibliothèque et sa Source." : "Contenu marqué comme nouveau.");
-    } catch (e) { setPage(previousPage); setPlaying(previousPlaying); setSelected(previousSelection); setError((e as Error).message); }
+    } catch (e) { setPage(previousPage); setPlaying(previousPlaying); setSelected(previousSelection); setCompletionSuppressedId(previousSuppression); setError((e as Error).message); return false; }
     finally { changeLock.current = false; setChanging(false); }
     return true;
   }
@@ -197,7 +221,7 @@ export default function Home() {
     setPage(previous => updateItemProgress(previous, itemId, progressSeconds, durationSeconds, lastPlayedAt));
     setPlaying(previous => previous?.id === itemId ? { ...previous, progressSeconds, durationSeconds: durationSeconds ?? previous.durationSeconds, lastPlayedAt } : previous);
   }
-  function closePlayer() { setPlaying(null); setCompletionSuppressedId(null); }
+  function closePlayer() { setReaderExpanded(false); setPlaying(null); setCompletionSuppressedId(null); }
   async function refresh(source?: Source) {
     if (refreshing) return;
     setRefreshing(true); setError(""); setNotice("");
@@ -265,12 +289,12 @@ export default function Home() {
       <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1>{description && <p>{description}</p>}</div><button className="outline-button" disabled={refreshing || !sources.some(source => source.active)} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
       {error && <div className="feedback error" role="alert"><span>{error}</span><button aria-label="Fermer l’erreur" onClick={() => setError("")}>×</button></div>}
       {notice && <div className="feedback" role="status"><span>{notice}</span><button aria-label="Fermer le message" onClick={() => setNotice("")}>×</button></div>}
-      {playing && <section className="watch-panel" ref={player} tabIndex={-1} aria-label={playing.mediaType === "article" ? "Lecteur d’article" : playing.mediaType === "podcast" ? "Lecteur podcast" : "Lecteur vidéo"}>
-        <div className="watch-heading"><span>EN COURS DE LECTURE · {playing.sourceName}</span><button onClick={closePlayer} aria-label="Fermer le lecteur">×</button></div>
-        {opening?.kind === "article" ? <ArticleReader key={playing.id} item={playing} /> : opening?.kind === "podcast" ? <PodcastPlayer key={playing.id} itemId={playing.id} audioUrl={opening.audioUrl} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : opening?.kind === "youtube" ? <YouTubePlayer key={playing.id} itemId={playing.id} videoId={opening.videoId} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : <p className="player-fallback">Ce contenu ne peut pas être lu ici. Ouvre-le sur le site de la source.</p>}
+      {playing && <section className={"watch-panel" + (readerExpanded ? " reader-expanded" : "")} role={readerExpanded ? "dialog" : undefined} aria-modal={readerExpanded || undefined} ref={player} tabIndex={-1} aria-label={playing.mediaType === "article" ? "Lecteur d’article" : playing.mediaType === "podcast" ? "Lecteur podcast" : "Lecteur vidéo"}>
+        <div className="watch-heading"><span>EN COURS DE LECTURE · {playing.sourceName}</span><div>{playing.mediaType === "article" && <button className="reader-expand" aria-pressed={readerExpanded} onClick={() => setReaderExpanded(value => !value)}>{readerExpanded ? "Réduire" : "Plein écran"}</button>}<button onClick={closePlayer} aria-label="Fermer le lecteur">×</button></div></div>
+        {opening?.kind === "article" ? <ArticleReader key={playing.id} item={playing} suppressAutoSeen={completionSuppressedId === playing.id} onStart={() => playing.read ? changeState([playing.id], { read:false }, true) : true} onProgress={(progress, duration, at) => updateProgress(playing.id, progress, duration, at)} onComplete={() => changeState([playing.id], { read:true })} onWarning={setNotice} /> : opening?.kind === "podcast" ? <PodcastPlayer key={playing.id} itemId={playing.id} audioUrl={opening.audioUrl} onStart={() => playing.read ? changeState([playing.id], { read:false }, true) : true} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : opening?.kind === "youtube" ? <YouTubePlayer key={playing.id} itemId={playing.id} videoId={opening.videoId} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : <p className="player-fallback">Ce contenu ne peut pas être lu ici. Ouvre-le sur le site de la source.</p>}
         <div className="watch-details">{playing.mediaType !== "article" && <h2>{playing.title}</h2>}<div className="watch-actions"><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { saved: !playing.saved })}>{playing.saved ? "♥ Enregistrée" : "♡ Enregistrer"}</button><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { read: !playing.read })}>{playing.read ? "Marquer comme nouveau" : playing.mediaType === "article" ? "Marquer comme lu" : "Marquer comme vu"}</button><a href={safeMediaUrl(playing.url) || undefined} target="_blank" rel="noreferrer">Ouvrir sur {playing.sourceKind === "youtube" ? "YouTube" : "le site"} ↗</a></div></div>
       </section>}
-      {view === "sources" ? <SourceBrowser sources={sources} loading={sourcesLoading} refreshing={refreshing} cleaningShorts={cleaningShorts} cleanupMore={Object.keys(shortCursors).length > 0} onAdd={() => setOpen(true)} onOpen={source => navigate("all", source.id)} onRefresh={source => void refresh(source)} onRemove={source => void remove(source)} onRemoveShorts={() => void removeShorts()} /> : <>
+      {view === "sources" ? <SourceBrowser sources={sources} loading={sourcesLoading} refreshing={refreshing} cleaningShorts={cleaningShorts} cleanupMore={Object.keys(shortCursors).length > 0} onAdd={() => setOpen(true)} onOpen={source => navigate("all", source.id)} onRefresh={source => void refresh(source)} onEdit={setEditingSource} onRemove={source => void remove(source)} onRemoveShorts={() => void removeShorts()} /> : <>
         <div className="feed-overview"><span className="content-type">{contentTypes[contentType].icon} {contentTypes[contentType].label}</span><span>{view === "inbox" ? page.total + " à découvrir" : page.total + " contenu(s) dans cette vue"}</span><span className="overview-end">Tes flux, sans perdre le fil.</span></div>
         <div className="content-filters" aria-label="Filtrer par type de contenu">{(Object.keys(contentTypes) as ContentType[]).map(type => <button key={type} className={contentType === type ? "filter-active" : ""} aria-pressed={contentType === type} onClick={() => { closePlayer(); setContentType(type); setSelected(new Set()); setLoading(true); }}>{contentTypes[type].label}</button>)}</div>
         <div className="library-toolbar"><div><h2>{currentSource ? "Historique de la source" : "Toutes les sources"}</h2><p>{loading ? "Chargement…" : page.total + " contenu(s)"}{view === "all" && " · historique collecté"}</p></div><label className="video-search"><span aria-hidden="true">⌕</span><input type="search" maxLength={200} value={query} onChange={event => { setQuery(event.target.value); setSelected(new Set()); }} placeholder="Rechercher dans les flux…" aria-label="Rechercher dans les flux" /></label></div>
@@ -285,6 +309,7 @@ export default function Home() {
       </>}
     </section>
     {open && <AddSource feedUrls={sources.map(source => source.feedUrl)} onClose={() => setOpen(false)} onAdded={message => { setOpen(false); navigate("inbox"); setNotice(message); setSourceRevision(value => value + 1); setFeedRevision(value => value + 1); }} />}
+    {editingSource && <EditSource source={editingSource} onClose={() => setEditingSource(null)} onSaved={source => { setEditingSource(null); setSources(previous => previous.map(old => old.id === source.id ? source : old)); setPlaying(previous => previous?.sourceId === source.id ? { ...previous, sourceName: source.name } : previous); setNotice("Source mise à jour."); setSourceRevision(value => value + 1); setFeedRevision(value => value + 1); }} />}
     {settingsOpen && <AccountSettings onClose={() => setSettingsOpen(false)} onSignOut={() => { setSettingsOpen(false); void signOut(); }} />}
   </main>;
 }
