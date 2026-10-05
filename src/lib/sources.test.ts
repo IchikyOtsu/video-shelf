@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { deduplicateNormalizedItems, getSourceProvider, initialImportStates, runSourceSync, type NormalizedItem } from "./sources";
 import { deterministicItemStateId } from "./item-state";
 import { syncSourceBatch } from "./source-sync-batch";
+import { SourceSyncDeferredError } from "./sync-control";
 import { SourceFetchError } from "./source-fetch";
 
 const source = { id: "11111111-1111-4111-8111-111111111111", userId: "22222222-2222-4222-8222-222222222222", kind: "youtube", feedUrl: "https://example.com/feed" };
@@ -80,4 +81,14 @@ test("failure recording cannot mask the original upstream error", async t => {
   t.mock.method(console, "error", () => {});
   const upstream = new SourceFetchError("HTTP_ERROR", "example.com", 429);
   await assert.rejects(runSourceSync(source, { contentType: "video", sync: async () => { throw upstream; } }, async () => 0, async () => {}, async () => { throw new Error("Database unavailable"); }), error => error === upstream);
+});
+
+test("deadline expiration after fetching defers a source without persisting or recording success/failure", async () => {
+  const actions: string[] = [];
+  await assert.rejects(runSourceSync(source, { contentType: "video", sync: async (_source, context) => {
+    assert.ok(context);
+    context.deadlineMs = 0;
+    return [item];
+  } }, async () => { actions.push("persist"); return 1; }, async () => { actions.push("success"); }, async () => { actions.push("failure"); }, { deadlineMs: Date.now() + 60_000 }), SourceSyncDeferredError);
+  assert.deepEqual(actions, []);
 });

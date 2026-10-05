@@ -1,10 +1,10 @@
 import type { NormalizedItem } from "./sources";
 import { SourceFetchError, type SourceFetchErrorCode } from "./source-fetch";
 import { youtubeChannelIdPattern } from "./youtube";
+import { checkSyncDeadline } from "./sync-control";
 import { youtubeFormatPlaylist } from "./youtube-shorts";
 
 export const YOUTUBE_UPLOAD_CACHE_MS = 5 * 60_000;
-const CHANNEL_CACHE_MS = 7 * 24 * 60 * 60_000;
 const API_COOLDOWN_MS = 15 * 60_000;
 const MAX_CACHE_ENTRIES = 256;
 type Json = Record<string, unknown>;
@@ -35,8 +35,7 @@ export function normalizeYouTubeUploads(data: unknown, channelId: string): Norma
   return result;
 }
 
-// Success-only cache plus single-flight requests, shared across sources/accounts
-// on a warm instance. Next's Data Cache also reuses stable channel lookups.
+// Success-only cache and single-flight requests scoped to this client.
 export function createYouTubeApiClient(apiKey: string, fetcher: typeof fetch = fetch, now: () => number = Date.now) {
   const cache = new Map<string, { value: Json; expires: number }>();
   const pending = new Map<string, Promise<Json>>();
@@ -45,7 +44,8 @@ export function createYouTubeApiClient(apiKey: string, fetcher: typeof fetch = f
   async function get(path: string, params: Record<string, string>, ttl: number): Promise<Json> {
     const url = new URL(`https://www.googleapis.com/youtube/v3/${path}`);
     url.search = new URLSearchParams({ ...params, key: apiKey }).toString();
-    const key = url.toString();
+    // The client already scopes its caches to one credential.
+    const key = `${path}:${new URLSearchParams(params)}`;
     const cached = cache.get(key);
     if (cached && cached.expires > now()) return cached.value;
     if (cached) cache.delete(key);
@@ -57,7 +57,7 @@ export function createYouTubeApiClient(apiKey: string, fetcher: typeof fetch = f
       try {
         // Uploads must be fresh when the local cache expires: stale-while-
         // revalidate could otherwise make the daily cron import yesterday's list.
-        const response = await fetcher(url, path === "channels" ? { signal, next: { revalidate: ttl / 1000 } } : { signal, cache: "no-store" });
+        const response = await fetcher(url, { signal, cache: "no-store" });
         let data: Json;
         try { data = object(await response.json()); }
         catch {
@@ -96,16 +96,31 @@ export function createYouTubeApiClient(apiKey: string, fetcher: typeof fetch = f
   }
 
   return {
-    async sync(channelId: string): Promise<NormalizedItem[]> {
+    async sync(channelId: string, options: { knownGuids?: (ids: string[]) => Promise<ReadonlySet<string>>; deadlineMs?: number } = {}): Promise<NormalizedItem[]> {
       if (!youtubeChannelIdPattern.test(channelId)) throw new Error("Identifiant de chaîne YouTube invalide.");
-      const channelData = await get("channels", { part: "contentDetails", id: channelId, fields: "items(id,contentDetails/relatedPlaylists/uploads)" }, CHANNEL_CACHE_MS);
-      const channel = array(channelData.items).map(object).find(item => item.id === channelId);
-      if (!channel) throw new SourceFetchError("HTTP_ERROR", "www.googleapis.com", 404);
-      const uploads = object(object(channel.contentDetails).relatedPlaylists).uploads;
-      if (typeof uploads !== "string" || !/^[A-Za-z0-9_-]{10,128}$/.test(uploads)) throw new SourceFetchError("INVALID_RESPONSE", "www.googleapis.com");
-      const data = await get("playlistItems", { part: "snippet,contentDetails", playlistId: youtubeFormatPlaylist(channelId, "videos"), maxResults: "50", fields: "items(snippet(title,description,videoOwnerChannelId,videoOwnerChannelTitle,channelTitle,thumbnails),contentDetails(videoId,videoPublishedAt))" }, YOUTUBE_UPLOAD_CACHE_MS);
-      // Only one page. No historical crawl and no per-video requests.
-      return normalizeYouTubeUploads(data, channelId);
+      const rows: NormalizedItem[] = [];
+      const visited = new Set<string>();
+      let pageToken: string | undefined;
+      do {
+        checkSyncDeadline(options.deadlineMs, now());
+        const data = await get("playlistItems", { part: "snippet,contentDetails", playlistId: youtubeFormatPlaylist(channelId, "videos"), maxResults: "50", fields: "nextPageToken,items(snippet(title,description,videoOwnerChannelId,videoOwnerChannelTitle,channelTitle,thumbnails),contentDetails(videoId,videoPublishedAt))", ...(pageToken ? { pageToken } : {}) }, YOUTUBE_UPLOAD_CACHE_MS);
+        checkSyncDeadline(options.deadlineMs, now());
+        const page = normalizeYouTubeUploads(data, channelId);
+        // New sources intentionally import one page, without a historical crawl.
+        if (!options.knownGuids) { rows.push(...page); break; }
+        const known = await options.knownGuids(page.map(item => item.guid));
+        checkSyncDeadline(options.deadlineMs, now());
+        const boundary = page.findIndex(item => known.has(item.guid));
+        if (boundary >= 0) {
+          rows.push(...page.slice(0, boundary + 1), ...page.slice(boundary + 1).filter(item => known.has(item.guid)));
+          break;
+        }
+        rows.push(...page);
+        pageToken = typeof data.nextPageToken === "string" && data.nextPageToken ? data.nextPageToken : undefined;
+        if (pageToken && visited.has(pageToken)) throw new SourceFetchError("INVALID_RESPONSE", "www.googleapis.com");
+        if (pageToken) visited.add(pageToken);
+      } while (pageToken);
+      return rows;
     },
     async shorts(channelId: string, pageToken?: string): Promise<{ ids: string[]; nextPageToken?: string }> {
       try {

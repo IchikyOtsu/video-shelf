@@ -8,6 +8,8 @@ import { syncSource } from "@/lib/sources";
 import { uuidPattern } from "@/lib/library";
 import { syncSourceBatch } from "@/lib/source-sync-batch";
 
+export const maxDuration = 300;
+
 export async function POST(_: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!db) return NextResponse.json({ error: "Database not connected" }, { status: 503 });
   const user = await readSession((await cookies()).get(cookieName)?.value);

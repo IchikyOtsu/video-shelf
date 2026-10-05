@@ -200,9 +200,9 @@ export default function Home() {
     if (refreshing) return;
     setRefreshing(true); setError(""); setNotice("");
     try {
-      const { synced, failed, imported } = await request(source ? "/api/sources/" + source.id + "/sync" : "/api/sources/sync", { method: "POST", timeoutMs: 310_000 });
+      const { synced, failed, imported, remaining = [] } = await request(source ? "/api/sources/" + source.id + "/sync" : "/api/sources/sync", { method: "POST", timeoutMs: 310_000 });
       if (failed) setError(failed + " source(s) indisponible(s). Les autres flux ont été actualisés.");
-      setNotice(synced + " source(s) actualisée(s). " + (imported ? imported + " nouveau(x) contenu(s) dans Nouveautés." : "Aucun nouveau contenu récupéré."));
+      setNotice(synced + " source(s) actualisée(s). " + (imported ? imported + " nouveau(x) contenu(s) dans Nouveautés." : "Aucun nouveau contenu récupéré.") + (remaining.length ? " " + remaining.length + " source(s) reportée(s). Relance l’actualisation pour continuer ; le cron les reprendra aussi." : ""));
       setFeedRevision(value => value + 1);
       setSourceRevision(value => value + 1);
     } catch (e) { setError((e as Error).message); }
