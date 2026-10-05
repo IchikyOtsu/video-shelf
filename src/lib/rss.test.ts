@@ -9,7 +9,7 @@ test("RSS feeds map article metadata and derive their site", () => {
   assert.equal(result.name, "Journal");
   assert.equal(result.siteUrl, "https://journal.test/");
   assert.equal(result.contentType, "article");
-  assert.deepEqual(result.items[0], { guid: "article-1", title: "Bonjour", url: "https://journal.test/bonjour", audioUrl: null, summary: "Résumé", author: "Ada", mediaType: "article", duration: null, imageUrl: "https://journal.test/image.jpg", publishedAt: new Date("2026-10-01T10:00:00.000Z") });
+  assert.deepEqual(result.items[0], { guid: "article-1", title: "Bonjour", url: "https://journal.test/bonjour", audioUrl: null, summary: "Résumé", contentHtml: null, author: "Ada", mediaType: "article", duration: null, imageUrl: "https://journal.test/image.jpg", publishedAt: new Date("2026-10-01T10:00:00.000Z") });
 });
 
 test("Atom feeds map ids, alternate links and authors", () => {

@@ -48,3 +48,9 @@ test("failure logs include safe diagnostics and exclude sensitive data", t => {
     ["Source sync failed", { kind: "rss", hostname: "example.com", status: null, error: "SYNC_ERROR", durationMs: 456 }],
   ]);
 });
+
+
+test("bounded feed reads reject oversized streams without weakening HTTP diagnostics", async t => {
+  t.mock.method(globalThis, "fetch", async () => new Response("123456789"));
+  await assert.rejects(fetchSourceText("https://example.com/feed", {}, 10_000, 5), error => error instanceof SourceFetchError && error.code === "INVALID_RESPONSE");
+});

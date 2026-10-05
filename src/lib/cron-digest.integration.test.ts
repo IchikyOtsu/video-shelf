@@ -222,3 +222,15 @@ test("unsafe provider exceptions never reach logs and failures still permit othe
   assert.ok(!serialized.includes("secret-token")); assert.ok(!serialized.includes("a@example.test"));
   assert.deepEqual(Object.keys(logs[0][1] as object).sort(), ["error", "itemCount", "status", "success", "userId"]);
 });
+
+
+test("full RSS content persists and refreshes without changing read/saved state or creating new digest imports", async () => {
+  const item = { ...makeItem("reader", "article"), contentHtml: "<p>Full article</p>" };
+  fixture.set(sourceB, [item]);
+  await persist({ id: sourceB, kind: "rss", feedUrl: "https://rss.test/b" });
+  fixture.set(sourceB, [{ ...item, contentHtml: "<h2>Updated article</h2>" }]);
+  const result = await run();
+  assert.equal(result.imported, 0); assert.equal(result.emailsSent, 0);
+  const rows = await database.query<{ content_html: string }>("select content_html from items where guid = 'reader'");
+  assert.equal(rows.rows[0].content_html, "<h2>Updated article</h2>");
+});

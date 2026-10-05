@@ -10,6 +10,7 @@ export function metadataUpdateSet() {
     author: sql`coalesce(nullif(excluded."author", ''), ${items.author})`,
     summary: sql`coalesce(nullif(excluded."summary", ''), ${items.summary})`,
     duration: sql`coalesce(nullif(excluded."duration", ''), ${items.duration})`,
+    contentHtml: sql`coalesce(nullif(excluded."content_html", ''), ${items.contentHtml})`,
     publishedAt: sql`coalesce(excluded."published_at", ${items.publishedAt})`,
   };
 }

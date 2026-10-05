@@ -19,13 +19,26 @@ export function sourceHostname(feedUrl: string) {
 }
 
 // Cover response body reads as well as headers with the same timeout.
-export async function fetchSourceText(feedUrl: string, headers: HeadersInit = {}, timeoutMs = 10_000) {
+export async function fetchSourceText(feedUrl: string, headers: HeadersInit = {}, timeoutMs = 10_000, maxBytes = Infinity) {
   const hostname = sourceHostname(feedUrl);
   const signal = AbortSignal.timeout(timeoutMs);
   try {
     const response = await fetch(feedUrl, { signal, headers, cache: "no-store" });
     if (!response.ok) throw new SourceFetchError("HTTP_ERROR", sourceHostname(response.url || feedUrl), response.status);
-    return { text: await response.text(), url: response.url || feedUrl };
+    let text: string;
+    if (Number.isFinite(maxBytes) && response.body) {
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); const parts: string[] = []; let size = 0;
+      try {
+        while (true) {
+          const chunk = await reader.read(); if (chunk.done) break;
+          size += chunk.value.byteLength;
+          if (size > maxBytes) { await reader.cancel(); throw new SourceFetchError("INVALID_RESPONSE", hostname); }
+          parts.push(decoder.decode(chunk.value, { stream: true }));
+        }
+        parts.push(decoder.decode()); text = parts.join("");
+      } finally { reader.releaseLock(); }
+    } else { text = await response.text(); if (new TextEncoder().encode(text).byteLength > maxBytes) throw new SourceFetchError("INVALID_RESPONSE", hostname); }
+    return { text, url: response.url || feedUrl };
   } catch (error) {
     if (error instanceof SourceFetchError) throw error;
     throw new SourceFetchError(signal.aborted || (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) ? "TIMEOUT" : "NETWORK_ERROR", hostname);

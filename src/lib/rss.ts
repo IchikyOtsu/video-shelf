@@ -1,11 +1,12 @@
 import { decodeXML } from "entities";
-import { XMLParser } from "fast-xml-parser";
+import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { ContentType } from "./library";
 import type { NormalizedItem, SourceProvider, SourceSyncInput } from "./sources";
 import { fetchSourceText } from "./source-fetch";
 import { articleContent, contentUrl } from "./article-content";
 
-const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false, trimValues: true, stopNodes: ["*.content", "*.summary"] });
+const parserOptions = { ignoreAttributes: false, attributeNamePrefix: "@_", removeNSPrefix: false, trimValues: true, stopNodes: ["*.content", "*.summary"] };
+const parser = new XMLParser(parserOptions);
 const list = <T,>(value: T | T[] | undefined | null) => value == null ? [] : Array.isArray(value) ? value : [value];
 const attributes = (value: unknown): Record<string, unknown> => value && typeof value === "object" ? value as Record<string, unknown> : {};
 const text = (value: unknown): string => {
@@ -60,7 +61,8 @@ function normalizedItem(entry: Record<string, unknown>, base: string, fallback: 
   const link = (atom ? atomLink(entry, base) : url(entry.link, base)) || audioUrl;
   const guid = text(atom ? entry.id : entry.guid || entry.id) || link || "";
   if (!guid || !link) return null;
-  const html = text(atom ? entry.content || entry.summary : entry["content:encoded"] || entry.description);
+  const full = text(atom ? entry.content : entry["content:encoded"]);
+  const html = full || text(atom ? entry.summary : entry.description);
   const description = text(atom ? entry.summary || entry.content : entry.description || entry["content:encoded"]);
   const author = atom ? attributes(list(entry.author)[0]).name || entry["dc:creator"] : entry["dc:creator"] || entry.author || entry["itunes:author"];
   return {
@@ -68,6 +70,7 @@ function normalizedItem(entry: Record<string, unknown>, base: string, fallback: 
     // Keep source HTML as inert text for later excerpts/reading estimates and
     // legacy image recovery. It is never inserted into the DOM as markup.
     summary: html || description || null,
+    contentHtml: full || null,
     author: plain(author, base) || null, mediaType: audioUrl ? "podcast" : "article",
     duration: text(entry["itunes:duration"] || attributes(entry["media:content"])["@_duration"]) || null,
     imageUrl: image(entry, base, html, fallback, link),
@@ -76,16 +79,33 @@ function normalizedItem(entry: Record<string, unknown>, base: string, fallback: 
 }
 
 export type RssInspection = { name: string; siteUrl: string | null; imageUrl: string | null; contentType: Exclude<ContentType, "all">; items: NormalizedItem[] };
+export class RssParseError extends Error {
+  constructor(readonly code: "INVALID_XML" | "NOT_FEED") {
+    super(code === "INVALID_XML" ? "Le flux XML est invalide." : "Ce lien ne semble pas être un flux RSS ou Atom.");
+  }
+}
 export function parseRssOrAtom(xml: string, feedUrl: string): RssInspection {
-  const root = parser.parse(xml) as { rss?: Record<string, unknown>; feed?: Record<string, unknown> };
-  const channel = root.rss?.channel ? attributes(root.rss.channel) : undefined;
-  const atom = root.feed;
-  if (!channel && !atom) throw new Error("Ce lien ne semble pas être un flux RSS ou Atom.");
+  if (/<!DOCTYPE/i.test(xml) || XMLValidator.validate(xml) !== true) throw new RssParseError("INVALID_XML");
+  const xmlPrefix = xml.match(/<([A-Za-z_][\w.-]*):feed(?:\s|>)/)?.[1];
+  const feedParser = xmlPrefix ? new XMLParser({ ...parserOptions, stopNodes: [...parserOptions.stopNodes, `*.${xmlPrefix}:content`, `*.${xmlPrefix}:summary`] }) : parser;
+  const root = feedParser.parse(xml) as Record<string, unknown>;
+  const rss = attributes(root.rss);
+  const rdf = attributes(root["rdf:RDF"] || root.RDF);
+  const atomKey = Object.keys(root).find(key => key === "feed" || key.endsWith(":feed"));
+  const rawAtom = atomKey ? attributes(root[atomKey]) : undefined;
+  // Normalize an Atom namespace prefix without stripping Media RSS/DC keys.
+  const prefix = atomKey?.includes(":") ? atomKey.split(":")[0] + ":" : "";
+  const atomNodes = (value: unknown): unknown => Array.isArray(value) ? value.map(atomNodes) : value && typeof value === "object" ? Object.fromEntries(Object.entries(value).map(([key, node]) => [prefix && key.startsWith(prefix) ? key.slice(prefix.length) : key, atomNodes(node)])) : value;
+  const atom = rawAtom && attributes(atomNodes(rawAtom));
+  const isRdf = Object.hasOwn(rdf, "channel");
+  const channel = Object.hasOwn(rss, "channel") ? attributes(rss.channel) : isRdf ? attributes(rdf.channel) : undefined;
+  if (!channel && !(atom && ["title", "id", "entry"].some(key => Object.hasOwn(atom, key)))) throw new RssParseError("NOT_FEED");
   const container = channel || atom || {};
-  const base = url(container["@_xml:base"] || root.rss?.["@_xml:base"], feedUrl) || feedUrl;
+  const base = url(container["@_xml:base"] || rss["@_xml:base"] || rdf["@_xml:base"], feedUrl) || feedUrl;
   const siteUrl = channel ? url(channel.link, base) : atomLink(atom || {}, base);
   const imageUrl = image(container, base, "", url(atom?.logo || atom?.icon, base));
-  const entries = list(channel ? channel.item : atom?.entry).map(entry => normalizedItem(attributes(entry), base, imageUrl, !channel));
+  const rawEntries = isRdf ? rdf.item : channel ? channel.item : atom?.entry;
+  const entries = list(rawEntries).map(entry => normalizedItem(attributes(entry), base, imageUrl, !channel));
   const items = entries.filter((item): item is NormalizedItem => Boolean(item));
   const name = plain(container.title, base) || new URL(feedUrl).hostname;
   return { name, siteUrl, imageUrl, contentType: items.some(item => item.mediaType === "podcast") ? "podcast" : "article", items };
@@ -93,7 +113,7 @@ export function parseRssOrAtom(xml: string, feedUrl: string): RssInspection {
 export async function inspectRssFeed(feedUrl: string): Promise<RssInspection> {
   const parsed = new URL(feedUrl);
   if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("Ajoute une URL de flux RSS ou Atom valide.");
-  const response = await fetchSourceText(parsed.toString(), { "user-agent": "Shelf/1.0", accept: "application/rss+xml, application/atom+xml, application/xml, text/xml" });
+  const response = await fetchSourceText(parsed.toString(), { "user-agent": "Shelf/1.0", accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/plain" }, 10_000, 5 * 1024 * 1024);
   return parseRssOrAtom(response.text, response.url);
 }
 export const rssProvider: SourceProvider = { contentType: "article", async sync(source: SourceSyncInput) { return (await inspectRssFeed(source.feedUrl)).items; } };
