@@ -16,6 +16,7 @@ export type NormalizedItem = {
   url: string;
   audioUrl?: string | null;
   summary?: string | null;
+  contentHtml?: string | null;
   author?: string | null;
   mediaType: string;
   duration?: string | null;

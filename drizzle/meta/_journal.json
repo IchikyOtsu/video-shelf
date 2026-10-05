@@ -92,6 +92,13 @@
       "when": 1791207670217,
       "tag": "0012_rainy_serpent_society",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1791209101803,
+      "tag": "0013_curved_skin",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { youtubeVideoId } from "@/lib/video";
+import { itemOpening, safeMediaUrl } from "@/lib/item-opening";
 import { request } from "@/lib/client";
 import { startLegacyMigration } from "@/lib/auth-flow";
 import { applyOptimisticItemState, pruneSelection, toggleSelection, updateItemProgress, type ItemStateChange } from "@/lib/feed-state";
@@ -11,6 +11,8 @@ import { BulkActionBar } from "./components/bulk-action-bar";
 import { ItemCard } from "./components/item-card";
 import { SourceBrowser, type SourceSummary } from "./components/source-browser";
 import { YouTubePlayer } from "./components/youtube-player";
+import { ArticleReader } from "./components/article-reader";
+import { PodcastPlayer } from "./components/podcast-player";
 import { AccountSettings } from "./components/account-settings";
 
 type User = { id: string; email: string; name: string | null };
@@ -242,7 +244,7 @@ export default function Home() {
   const currentSource = sources.find(source => source.id === sourceId);
   const title = view === "sources" ? "Sources" : currentSource ? currentSource.name : libraryViews[view].label;
   const description = currentSource ? "Tout l’historique collecté pour cette source, y compris les contenus déjà vus." : "";
-  const playerId = playing ? youtubeVideoId(playing.url) : null;
+  const opening = playing ? itemOpening(playing) : null;
   const inboxGroups = view === "inbox" ? groupInboxItems(page.items) : [];
   const selectedIds = [...selected];
   const allVisibleSelected = Boolean(page.items.length) && page.items.every(item => selected.has(item.id));
@@ -263,10 +265,10 @@ export default function Home() {
       <header className="page-header"><div><p className="eyebrow">TON AGRÉGATEUR PERSONNEL</p><h1>{title}</h1>{description && <p>{description}</p>}</div><button className="outline-button" disabled={refreshing || !sources.some(source => source.active)} onClick={() => refresh()}>{refreshing ? "Actualisation…" : "↻ Actualiser les flux"}</button></header>
       {error && <div className="feedback error" role="alert"><span>{error}</span><button aria-label="Fermer l’erreur" onClick={() => setError("")}>×</button></div>}
       {notice && <div className="feedback" role="status"><span>{notice}</span><button aria-label="Fermer le message" onClick={() => setNotice("")}>×</button></div>}
-      {playing && <section className="watch-panel" ref={player} tabIndex={-1} aria-label="Lecteur vidéo">
+      {playing && <section className="watch-panel" ref={player} tabIndex={-1} aria-label={playing.mediaType === "article" ? "Lecteur d’article" : playing.mediaType === "podcast" ? "Lecteur podcast" : "Lecteur vidéo"}>
         <div className="watch-heading"><span>EN COURS DE LECTURE · {playing.sourceName}</span><button onClick={closePlayer} aria-label="Fermer le lecteur">×</button></div>
-        {playerId ? <YouTubePlayer key={playing.id} itemId={playing.id} videoId={playerId} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : <p className="player-fallback">Cette vidéo ne peut pas être intégrée. Ouvre-la sur le site de la source.</p>}
-        <div className="watch-details"><h2>{playing.title}</h2><div className="watch-actions"><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { saved: !playing.saved })}>{playing.saved ? "♥ Enregistrée" : "♡ Enregistrer"}</button><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { read: !playing.read })}>{playing.read ? "Marquer comme nouvelle" : "Marquer comme vue"}</button><a href={playing.url} target="_blank" rel="noreferrer">Ouvrir sur {playing.sourceKind === "youtube" ? "YouTube" : "le site"} ↗</a></div></div>
+        {opening?.kind === "article" ? <ArticleReader key={playing.id} item={playing} /> : opening?.kind === "podcast" ? <PodcastPlayer key={playing.id} itemId={playing.id} audioUrl={opening.audioUrl} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : opening?.kind === "youtube" ? <YouTubePlayer key={playing.id} itemId={playing.id} videoId={opening.videoId} initialProgress={playing.progressSeconds} initialDuration={playing.durationSeconds} suppressAutoSeen={completionSuppressedId === playing.id} onProgress={(progressSeconds, durationSeconds, lastPlayedAt) => updateProgress(playing.id, progressSeconds, durationSeconds, lastPlayedAt)} onComplete={() => changeState([playing.id], { read: true })} onWarning={message => setNotice(message)} /> : <p className="player-fallback">Ce contenu ne peut pas être lu ici. Ouvre-le sur le site de la source.</p>}
+        <div className="watch-details">{playing.mediaType !== "article" && <h2>{playing.title}</h2>}<div className="watch-actions"><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { saved: !playing.saved })}>{playing.saved ? "♥ Enregistrée" : "♡ Enregistrer"}</button><button className="outline-button" disabled={changing} onClick={() => changeState([playing.id], { read: !playing.read })}>{playing.read ? "Marquer comme nouveau" : playing.mediaType === "article" ? "Marquer comme lu" : "Marquer comme vu"}</button><a href={safeMediaUrl(playing.url) || undefined} target="_blank" rel="noreferrer">Ouvrir sur {playing.sourceKind === "youtube" ? "YouTube" : "le site"} ↗</a></div></div>
       </section>}
       {view === "sources" ? <SourceBrowser sources={sources} loading={sourcesLoading} refreshing={refreshing} cleaningShorts={cleaningShorts} cleanupMore={Object.keys(shortCursors).length > 0} onAdd={() => setOpen(true)} onOpen={source => navigate("all", source.id)} onRefresh={source => void refresh(source)} onRemove={source => void remove(source)} onRemoveShorts={() => void removeShorts()} /> : <>
         <div className="feed-overview"><span className="content-type">{contentTypes[contentType].icon} {contentTypes[contentType].label}</span><span>{view === "inbox" ? page.total + " à découvrir" : page.total + " contenu(s) dans cette vue"}</span><span className="overview-end">Tes flux, sans perdre le fil.</span></div>
