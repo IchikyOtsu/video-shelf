@@ -1,3 +1,4 @@
+import { checkRateLimit } from "@/lib/rate-limit";
 import { compare } from "bcryptjs";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { NextResponse } from "next/server";
@@ -9,7 +10,7 @@ import { decryptTotp, hashRecoveryCode, verifyTotp } from "@/lib/security";
 
 export async function POST(request: Request) {
   const session = await readSession((await cookies()).get(cookieName)?.value);
-  if (!session || !db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session || !db) return NextResponse.json({ error: "Unauthorized" }, { status: 401 }); if (await checkRateLimit("account-totp",session.id,10,15 * 60_000)) return NextResponse.json({ error:"Trop de tentatives. Réessaie plus tard." },{ status:429 });
   const { currentPassword, code } = await request.json();
   const user = await db.query.users.findFirst({ where: eq(users.id, session.id) });
   const value = String(code || "");

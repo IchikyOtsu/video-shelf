@@ -1,4 +1,4 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
@@ -118,8 +118,8 @@ export async function syncSourceDetailed(source: SourceSyncInput, { initialImpor
       const result = insertedSyncResult(changed.rows);
       return result;
     },
-    async () => { await database.update(sources).set({ lastSyncedAt: new Date(), lastSyncError: null }).where(eq(sources.id, source.id)); },
-    async message => { await database.update(sources).set({ lastSyncError: message }).where(eq(sources.id, source.id)); },
+    async () => { await database.update(sources).set({ lastSyncedAt: new Date(), lastSyncError: null, failureCount:0, failureSince:null, lastFailureAt:null }).where(eq(sources.id, source.id)); },
+    async message => { await database.update(sources).set({ lastSyncError: message, failureCount:sql`${sources.failureCount} + 1`, failureSince:sql`coalesce(${sources.failureSince}, now())`, lastFailureAt:new Date() }).where(eq(sources.id, source.id)); },
     context,
   );
 }

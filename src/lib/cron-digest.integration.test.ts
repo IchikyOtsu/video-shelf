@@ -267,3 +267,51 @@ test("later RSS imports stay unread while initial podcast imports are read", asy
   const rows = (await database.query<{ item_id: string; read: boolean }>("select item_id, read from item_states")).rows;
   assert.ok(!rows.some(row => row.item_id === later[0].id)); assert.equal(rows.find(row => row.item_id === podcast[0].id)?.read, true);
 });
+
+test("visible automatic sync status contains only the authenticated user's counts and no digest details", async () => {
+  const { automaticSyncStatus } = await import("./sync-status");
+  fixture.set(sourceA,[makeItem("video")]); fixture.set(sourceB,[makeItem("article","article")]); fixture.set(sourceC,[makeItem("podcast","podcast")]);
+  await run();
+  const statusA = await automaticSyncStatus(query,userA); const statusB = await automaticSyncStatus(query,userB);
+  assert.equal(statusA?.synced,2); assert.equal(statusA?.imported,2); assert.equal(statusA?.emailsSent,1);
+  assert.equal(statusB?.synced,1); assert.equal(statusB?.imported,1); assert.equal(statusB?.emailsSent,1);
+  assert.equal(statusA?.phase,"complete"); assert.equal(statusA?.running,false);
+  await database.query("delete from sources where id=$1",[sourceA]);
+  assert.equal((await automaticSyncStatus(query,userA))?.synced,2); assert.doesNotMatch(JSON.stringify(statusA),/recipient|example.test|payload|leaseToken|message/);
+});
+test("global content search and combined filters remain isolated between accounts", async () => {
+  const { buildItemCondition, itemStateJoin } = await import("./item-query");
+  fixture.set(sourceA,[{ ...makeItem("a","podcast"),title:"Episode",author:"Ada",contentHtml:"<p>A hidden comet discovery</p>" }]);
+  fixture.set(sourceC,[{ ...makeItem("b","podcast"),title:"Private",contentHtml:"<p>A hidden comet discovery</p>" }]);
+  await persist({ id:sourceA,kind:"youtube",feedUrl:"https://example.test/a" }); await persist({ id:sourceC,kind:"rss",feedUrl:"https://example.test/c" });
+  await database.query("update sources set category='Tech'");
+  await database.query("insert into item_states (user_id,item_id,saved,read,progress_seconds) select s.user_id,i.id,true,false,60 from items i join sources s on s.id=i.source_id");
+  const { sql:rawSql,params } = dialect.sqlToQuery((await import("drizzle-orm")).sql`select items.title from items join sources on sources.id=items.source_id left join item_states on ${itemStateJoin(userA)} where ${buildItemCondition({ view:"all",sourceId:"",query:"comet",contentType:"podcast",category:"Tech",savedOnly:true,status:"in_progress" },userA)}`);
+  assert.deepEqual((await database.query(rawSql,params)).rows,[{ title:"Episode" }]);
+});
+
+test("bulk category moves reject a mixed-owner selection atomically and preserve other users", async () => {
+  const { moveCategoryStatement } = await import("./source-category");
+  assert.equal((await query(moveCategoryStatement(userA,[sourceA,sourceC],"Gaming"))).length,0);
+  assert.equal((await database.query("select id from sources where category='Gaming'")).rows.length,0);
+  assert.equal((await query(moveCategoryStatement(userA,[sourceA,sourceB],"Tech"))).length,2);
+  assert.equal((await database.query<{ category:string }>("select category from sources where id=$1",[sourceC])).rows[0].category,"Unsorted");
+});
+test("atomic rate limits count concurrent requests without bypass and reset expired windows", async () => {
+  const { rateLimitStatement } = await import("./rate-limit");
+  await database.exec("truncate auth_rate_limits");
+  const attempts = await Promise.all(Array.from({ length:20 },() => query<{ count:number }>(rateLimitStatement("key",60_000))));
+  assert.deepEqual(attempts.map(row => row[0].count).sort((a,b) => a-b),Array.from({ length:20 },(_,i) => i+1));
+  await database.exec("update auth_rate_limits set window_started_at=now() - interval '2 minutes'");
+  assert.equal((await query<{ count:number }>(rateLimitStatement("key",60_000)))[0].count,1);
+});
+
+test("one-use password reset cannot be replayed concurrently and never updates another account", async () => {
+  const { consumePasswordReset } = await import("./password-reset");
+  const tokenId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  await database.query("insert into password_reset_tokens(id,user_id,token_hash,expires_at) values ($1,$2,'hashed-token',now() + interval '1 hour')",[tokenId,userA]);
+  const attempts = await Promise.all([query(consumePasswordReset(tokenId,"new-hash")),query(consumePasswordReset(tokenId,"replayed-hash"))]);
+  assert.equal(attempts.reduce((count,rows) => count+rows.length,0),1);
+  assert.deepEqual((await database.query("select password_hash,session_version from users where id=$1",[userA])).rows,[{ password_hash:"new-hash",session_version:1 }]);
+  assert.deepEqual((await database.query("select password_hash,session_version from users where id=$1",[userB])).rows,[{ password_hash:"hash",session_version:0 }]);
+});

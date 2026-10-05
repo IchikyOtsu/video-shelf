@@ -1,12 +1,13 @@
 import { and, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { items, itemStates, sources } from "@/db/schema";
-import type { ContentType, LibraryView } from "./library";
+import type { ContentType, LibraryView, LibraryQuery } from "./library";
 
 export type ItemFilters = {
   view: LibraryView;
   sourceId: string;
   query: string;
   contentType: ContentType;
+  category?:string; status?:LibraryQuery["status"]; savedOnly?:boolean;
 };
 
 export const itemRead = sql<boolean>`coalesce(${itemStates.read}, false)`;
@@ -45,6 +46,10 @@ export function buildItemCondition(filters: ItemFilters, userId: string): SQL | 
     filters.contentType === "all" ? undefined : eq(items.mediaType, filters.contentType),
     filters.sourceId ? eq(sources.id, filters.sourceId) : undefined,
     filters.view === "inbox" ? eq(itemRead, false) : filters.view === "archive" ? eq(itemRead, true) : filters.view === "saved" ? eq(itemSaved, true) : undefined,
-    filters.query ? or(ilike(items.title, term), ilike(sources.name, term)) : undefined,
+    filters.category ? eq(sources.category,filters.category) : undefined,
+    filters.savedOnly ? eq(itemSaved,true) : undefined,
+    filters.status === "read" ? eq(itemRead,true) : filters.status === "unread" || filters.status === "in_progress" ? eq(itemRead,false) : undefined,
+    filters.status === "in_progress" ? sql`coalesce(${itemStates.progressSeconds},0) > 0` : undefined,
+    filters.query ? or(ilike(items.title, term), ilike(sources.name, term), ilike(items.author,term), ilike(items.summary,term), ilike(items.contentHtml,term), sql`exists (select 1 from article_documents doc where doc.item_id = ${items.id} and doc.html ilike ${term})`) : undefined,
   );
 }

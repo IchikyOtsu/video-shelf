@@ -1,3 +1,4 @@
+import { SOURCE_SYNC_CONCURRENCY } from "./source-sync-batch";
 import { youtubeChannelIdPattern } from "./youtube";
 
 export type YouTubeBatchInput = { kind: "youtube"; channelId: string; name: string; imageUrl?: string | null };
@@ -27,7 +28,10 @@ export function parseYouTubeBatch(body: unknown) {
 }
 
 export async function syncBatchSources<T extends { id: string; name: string }>(values: T[], syncer: (source: T) => Promise<number>) {
-  const settled = await Promise.allSettled(values.map(async source => ({ source, imported: await syncer(source) })));
+  const settled: PromiseSettledResult<{ source:T; imported:number }>[] = new Array(values.length);
+  let next = 0;
+  async function worker() { while (next < values.length) { const index = next++; const source = values[index]; try { settled[index] = { status:"fulfilled", value:{ source, imported:await syncer(source) } }; } catch (reason) { settled[index] = { status:"rejected", reason }; } } }
+  await Promise.all(Array.from({ length:Math.min(SOURCE_SYNC_CONCURRENCY, values.length) }, worker));
   const added: Array<{ source: T; imported: number }> = [];
   const failed: BatchFailure[] = [];
   for (let index = 0; index < settled.length; index++) {

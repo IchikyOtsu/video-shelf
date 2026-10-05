@@ -66,7 +66,7 @@ export function parseChannelResults(page: string): ChannelResult[] {
 }
 
 export async function searchYouTubeChannels(input: string): Promise<ChannelResult[]> {
-  const query = input.trim();
+  const query = input.trim().replace(/\s+/g, " ");
   if (query.startsWith("@") || youtubeChannelIdPattern.test(query) || /^(https?:\/\/|(?:www\.|m\.)?youtube\.com\/)/i.test(query)) {
     const channel = await resolveYouTubeChannel(query);
     return [{ channelId: channel.channelId, name: channel.name || channel.channelId, imageUrl: channel.imageUrl, description: channel.siteUrl }];
@@ -74,14 +74,14 @@ export async function searchYouTubeChannels(input: string): Promise<ChannelResul
   if (process.env.YOUTUBE_API_KEY) {
     const url = new URL("https://www.googleapis.com/youtube/v3/search");
     url.search = new URLSearchParams({ part: "snippet", type: "channel", maxResults: "8", q: query, key: process.env.YOUTUBE_API_KEY }).toString();
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000), next: { revalidate: 300 } });
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000), next: { revalidate: 3600 } });
     if (!response.ok) throw new Error("La recherche YouTube est indisponible. Essaie un @handle ou une URL de chaîne.");
     const data = await response.json();
     return (data.items || []).map((item: { snippet: { channelId: string; title: string; description: string; thumbnails?: { default?: { url: string } } } }) => ({ channelId: item.snippet.channelId, name: decodeHtml(item.snippet.title), description: decodeHtml(item.snippet.description), imageUrl: item.snippet.thumbnails?.default?.url || null }));
   }
   const url = new URL("https://www.youtube.com/results");
   url.search = new URLSearchParams({ search_query: query, sp: "EgIQAg==", hl: "fr" }).toString();
-  const response = await fetch(url, { headers: { "user-agent": "Mozilla/5.0", "accept-language": "fr,en;q=0.8", cookie: "SOCS=CAI" }, signal: AbortSignal.timeout(8000), next: { revalidate: 300 } });
+  const response = await fetch(url, { headers: { "user-agent": "Mozilla/5.0", "accept-language": "fr,en;q=0.8", cookie: "SOCS=CAI" }, signal: AbortSignal.timeout(8000), next: { revalidate: 3600 } });
   if (!response.ok) throw new Error("YouTube est temporairement indisponible. Réessaie dans un instant.");
   return parseChannelResults(await response.text());
 }

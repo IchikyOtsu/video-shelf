@@ -1,3 +1,4 @@
+import { checkRateLimit } from "@/lib/rate-limit";
 import { and, eq } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -16,6 +17,7 @@ export async function POST() {
   if (!db) return NextResponse.json({ error: "Database not connected" }, { status: 503 });
   const user = await readSession((await cookies()).get(cookieName)?.value);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (await checkRateLimit("source-sync-all",user.id,15,60 * 60_000)) return NextResponse.json({ error:"Trop de requêtes. Réessaie plus tard." },{ status:429 });
   const activeSources = await db.select({ id: sources.id, kind: sources.kind, feedUrl: sources.feedUrl, lastSyncedAt: sources.lastSyncedAt })
     .from(sources).where(and(eq(sources.userId, user.id), eq(sources.active, true)));
   return NextResponse.json(await syncSourceBatch(prioritizeSyncSources(activeSources), syncSource, { startBudgetMs: Math.max(0, SYNC_BATCH_START_BUDGET_MS - (Date.now() - startedAt)) }));

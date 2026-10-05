@@ -12,6 +12,8 @@ import { defaultReaderPreferences, parseReaderPreferences, readingIsComplete, re
 type Props = { item: FeedItem; suppressAutoSeen: boolean; onStart(): boolean | Promise<boolean>; onProgress(progress: number, duration: number | null, at: string): void; onComplete(): boolean | Promise<boolean>; onWarning(message: string): void };
 export function ArticleReader({ item, suppressAutoSeen, onStart, onProgress, onComplete, onWarning }: Props) {
   const [content, setContent] = useState<ReaderContent | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractError, setExtractError] = useState("");
   const [failed, setFailed] = useState(false);
   const [failedImage, setFailedImage] = useState(false);
   const [preferences, setPreferences] = useState(() => {
@@ -82,6 +84,13 @@ export function ArticleReader({ item, suppressAutoSeen, onStart, onProgress, onC
     setPreferences(next);
     try { localStorage.setItem("shelf-reader", JSON.stringify(next)); } catch { /* Apply for this visit. */ }
   }
+  async function loadFullArticle() {
+    if (extracting) return;
+    setExtracting(true); setExtractError("");
+    try { const data = await request(`/api/items/${item.id}/extract`, { method:"POST", timeoutMs:20_000 }); initial.current = 0; setPercent(0); if (scroller.current) scroller.current.scrollTop = 0; setContent(data); setFailed(false); }
+    catch (error) { setExtractError((error as Error).message); }
+    finally { setExtracting(false); }
+  }
   const parsedDate = item.publishedAt ? new Date(item.publishedAt) : null;
   const date = parsedDate && !Number.isNaN(parsedDate.getTime()) ? new Intl.DateTimeFormat("fr-BE", { dateStyle:"long" }).format(parsedDate) : "";
   const image = safeMediaUrl(item.imageUrl);
@@ -98,6 +107,7 @@ export function ArticleReader({ item, suppressAutoSeen, onStart, onProgress, onC
       {!content && !failed && <p role="status">Chargement de l’article…</p>}
       {(failed || content?.kind === "missing") && <p className="reader-notice">Le flux ne fournit pas de contenu lisible. Ouvre l’article sur le site de la source.</p>}
       {content?.kind === "summary" && <p className="reader-notice">Cet extrait est fourni par le flux. Lis l’article complet sur le site de la source.</p>}
+      {(content?.kind === "summary" || content?.kind === "missing" || failed) && <div className="reader-extract"><button className="outline-button" disabled={extracting} onClick={() => void loadFullArticle()}>{extracting ? "Récupération…" : "Récupérer l’article complet"}</button><small>À ta demande uniquement. Le résultat est conservé pour les prochaines lectures.</small>{extractError && <p role="alert">{extractError}</p>}</div>}
       {content?.html && <div className="reader-prose" dangerouslySetInnerHTML={{ __html:content.html }} />}
       <a className="reader-source-link" href={safeMediaUrl(item.url) || undefined} target="_blank" rel="noopener noreferrer">Lire sur le site de la source ↗</a>
     </div></div>

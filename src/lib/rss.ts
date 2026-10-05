@@ -1,3 +1,4 @@
+import { publicFetch } from "./public-fetch";
 import { decodeXML } from "entities";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import type { ContentType } from "./library";
@@ -110,10 +111,10 @@ export function parseRssOrAtom(xml: string, feedUrl: string): RssInspection {
   const name = plain(container.title, base) || new URL(feedUrl).hostname;
   return { name, siteUrl, imageUrl, contentType: items.some(item => item.mediaType === "podcast") ? "podcast" : "article", items };
 }
-export async function inspectRssFeed(feedUrl: string): Promise<RssInspection> {
+export async function inspectRssFeed(feedUrl: string, fetcher: typeof fetch = publicFetch): Promise<RssInspection> {
   const parsed = new URL(feedUrl);
   if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("Ajoute une URL de flux RSS ou Atom valide.");
-  const response = await fetchSourceText(parsed.toString(), { "user-agent": "Shelf/1.0", accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/plain" }, 10_000, 5 * 1024 * 1024);
+  const response = await fetchSourceText(parsed.toString(), { "user-agent": "Shelf/1.0", accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, text/plain" }, 10_000, 5 * 1024 * 1024, fetcher);
   return parseRssOrAtom(response.text, response.url);
 }
 export const rssProvider: SourceProvider = { contentType: "article", async sync(source: SourceSyncInput) { return (await inspectRssFeed(source.feedUrl)).items; } };

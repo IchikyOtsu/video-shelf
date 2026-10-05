@@ -6,7 +6,7 @@ export function parseSourceEdit(body: unknown): SourceEdit {
   const value = body as Record<string, unknown>;
   const result = {} as SourceEdit;
   for (const key of ["name", "feedUrl", "siteUrl", "imageUrl", "category"] as const) {
-    if (typeof value[key] !== "string" || value[key].length > (key.endsWith("Url") ? 2048 : 200)) throw new SourceEditError("Réglages de source invalides.");
+    if (typeof value[key] !== "string" || value[key].length > (key.endsWith("Url") ? 2048 : key === "category" ? 80 : 200)) throw new SourceEditError("Réglages de source invalides.");
     result[key] = value[key].trim();
   }
   if (!result.feedUrl) throw new SourceEditError("Le lien du flux est obligatoire.");
