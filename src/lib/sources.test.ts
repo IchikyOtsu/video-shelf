@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { deduplicateNormalizedItems, getSourceProvider, initialImportStates, runSourceSync, type NormalizedItem } from "./sources";
+import { deduplicateNormalizedItems, getSourceProvider, isInitialSourceSync, initialImportStates, runSourceSync, type NormalizedItem } from "./sources";
 import { deterministicItemStateId } from "./item-state";
 import { syncSourceBatch } from "./source-sync-batch";
 import { SourceSyncDeferredError } from "./sync-control";
@@ -91,4 +91,12 @@ test("deadline expiration after fetching defers a source without persisting or r
     return [item];
   } }, async () => { actions.push("persist"); return 1; }, async () => { actions.push("success"); }, async () => { actions.push("failure"); }, { deadlineMs: Date.now() + 60_000 }), SourceSyncDeferredError);
   assert.deepEqual(actions, []);
+});
+
+
+test("manual/cron retries before the first successful sync retain baseline semantics", () => {
+  assert.equal(isInitialSourceSync(null), true);
+  assert.equal(isInitialSourceSync(new Date()), false);
+  assert.equal(isInitialSourceSync(null, false), false);
+  assert.equal(isInitialSourceSync(new Date(), true), true);
 });
