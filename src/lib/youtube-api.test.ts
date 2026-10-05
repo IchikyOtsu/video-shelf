@@ -28,7 +28,7 @@ test("API sync uses two list requests initially and no detail/search/history req
   assert.equal(rows.length, 1);
   assert.deepEqual(calls.map(url => url.pathname.split("/").at(-1)), ["channels", "playlistItems"]);
   assert.equal(calls[1].searchParams.get("maxResults"), "50");
-  assert.equal(calls[1].searchParams.get("playlistId"), playlistId);
+  assert.equal(calls[1].searchParams.get("playlistId"), "UULF" + channelId.slice(2));
   assert.equal(calls.some(url => url.searchParams.has("pageToken")), false);
 });
 
@@ -104,4 +104,29 @@ test("an API outage pauses retries briefly while allowing recovery after one min
   now += 60_000;
   assert.equal((await client.sync(channelId)).length, 1);
   assert.equal(calls, 3);
+});
+
+test("Shorts cleanup requests only the Shorts playlist and follows explicit cursors", async () => {
+  const calls: URL[] = [];
+  const client = createYouTubeApiClient("test-key", async input => {
+    const url = new URL(String(input)); calls.push(url);
+    return json(url.searchParams.has("pageToken") ? { items: [{ contentDetails: { videoId: "bbbbbbbbbbb" } }] } : { items: [{ contentDetails: { videoId: "aaaaaaaaaaa" } }, { contentDetails: { videoId: "invalid" } }], nextPageToken: "next" });
+  });
+  assert.deepEqual(await client.shorts(channelId), { ids: ["aaaaaaaaaaa"], nextPageToken: "next" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].searchParams.get("playlistId"), "UUSH" + channelId.slice(2));
+  assert.equal(calls[0].searchParams.get("maxResults"), "50");
+  assert.deepEqual(await client.shorts(channelId, "next"), { ids: ["bbbbbbbbbbb"] });
+  assert.equal(calls[1].searchParams.get("pageToken"), "next");
+  assert.deepEqual(await client.shorts(channelId), { ids: ["aaaaaaaaaaa"], nextPageToken: "next" });
+  assert.equal(calls.length, 2);
+});
+
+test("a missing Shorts playlist is empty but blocked or malformed responses fail safely", async () => {
+  const missing = createYouTubeApiClient("test-key", async () => json({}, 404));
+  assert.deepEqual(await missing.shorts(channelId), { ids: [] });
+  const blocked = createYouTubeApiClient("test-key", async () => json({}, 403));
+  await assert.rejects(blocked.shorts(channelId), error => error instanceof SourceFetchError && error.status === 403);
+  const malformed = createYouTubeApiClient("test-key", async () => json({}));
+  await assert.rejects(malformed.shorts(channelId), SourceFetchError);
 });

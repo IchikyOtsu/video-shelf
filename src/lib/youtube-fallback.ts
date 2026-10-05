@@ -1,6 +1,7 @@
 import type { NormalizedItem } from "./sources";
 import { fetchSourceText, SourceFetchError } from "./source-fetch";
 import { youtubeChannelIdPattern } from "./youtube";
+import { youtubeFormatPlaylist } from "./youtube-shorts";
 
 type Node = Record<string, unknown>;
 function object(value: unknown): Node { return value && typeof value === "object" ? value as Node : {}; }
@@ -44,10 +45,11 @@ export function parseYouTubeVideosPage(page: string, channelId: string): Normali
     const id = video.videoId || lockup.contentId;
     const lockupMetadata = object(object(lockup.metadata).lockupMetadataViewModel);
     const title = text(video.title || lockupMetadata.title);
-    const navigation = object(video.navigationEndpoint || object(object(lockup.rendererContext).commandContext).onTap);
+    const command = object(video.navigationEndpoint || object(object(lockup.rendererContext).commandContext).onTap);
+    const navigation = object(command.innertubeCommand || command);
     const endpoint = object(navigation.commandMetadata);
     const path = object(endpoint.webCommandMetadata).url;
-    if (typeof path === "string" && path.startsWith("/shorts/")) continue;
+    if (navigation.reelWatchEndpoint || (typeof path === "string" && path.startsWith("/shorts/"))) continue;
     if (typeof id !== "string" || !/^[A-Za-z0-9_-]{11}$/.test(id) || !title || seen.has(id)) continue;
     seen.add(id);
     items.push({ guid: id, title, url: `https://www.youtube.com/watch?v=${id}`, mediaType: "video", author: typeof metadata.title === "string" ? metadata.title : null, imageUrl: thumbnail(video.thumbnail || object(object(lockup.contentImage).thumbnailViewModel).image), summary: null, duration: text(video.lengthText) || null, publishedAt: null });
@@ -58,11 +60,13 @@ export function parseYouTubeVideosPage(page: string, channelId: string): Normali
 }
 
 export async function fetchYouTubeFeedWithFallback(feedUrl: string): Promise<{ xml: string } | { items: NormalizedItem[] }> {
+  const channelId = youtubeFeedChannelId(feedUrl);
+  // Never fall back to the mixed uploads feed: /watch URLs can also be Shorts.
+  const rssUrl = channelId ? `https://www.youtube.com/feeds/videos.xml?playlist_id=${youtubeFormatPlaylist(channelId, "videos")}` : feedUrl;
   try {
-    const response = await fetchSourceText(feedUrl, { "user-agent": "Shelf/1.0" });
+    const response = await fetchSourceText(rssUrl, { "user-agent": "Shelf/1.0" });
     return { xml: response.text };
   } catch (error) {
-    const channelId = youtubeFeedChannelId(feedUrl);
     if (!(error instanceof SourceFetchError) || error.status !== 404 || !channelId) throw error;
     const response = await fetchSourceText(`https://www.youtube.com/channel/${channelId}/videos`, { "user-agent": "Mozilla/5.0", "accept-language": "en-US,en;q=0.9", cookie: "SOCS=CAI" });
     return { items: parseYouTubeVideosPage(response.text, channelId) };
