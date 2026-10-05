@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { sources } from "@/db/schema";
 import { syncSource } from "@/lib/sources";
 import { syncSourceBatch } from "@/lib/source-sync-batch";
+import { cronSyncDue } from "@/lib/cron-sync";
 
 export const maxDuration = 300;
 
@@ -11,6 +12,8 @@ export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   if (!secret || request.headers.get("authorization") !== `Bearer ${secret}`) return new NextResponse("Unauthorized", { status: 401 });
   if (!db) return new NextResponse("Database not connected", { status: 503 });
-  const allSources = await db.select({ id: sources.id, feedUrl: sources.feedUrl, kind: sources.kind }).from(sources).where(eq(sources.active, true));
-  return NextResponse.json(await syncSourceBatch(allSources, syncSource));
+  const allSources = await db.select({ id: sources.id, feedUrl: sources.feedUrl, kind: sources.kind, lastSyncedAt: sources.lastSyncedAt }).from(sources).where(eq(sources.active, true));
+  const now = new Date();
+  const dueSources = allSources.filter(source => cronSyncDue(source.lastSyncedAt, now));
+  return NextResponse.json({ ...await syncSourceBatch(dueSources, syncSource), skipped: allSources.length - dueSources.length });
 }

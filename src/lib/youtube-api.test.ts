@@ -1,0 +1,107 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { createYouTubeApiClient, normalizeYouTubeUploads, YOUTUBE_UPLOAD_CACHE_MS, YouTubeApiCooldownError } from "./youtube-api";
+import { SourceFetchError } from "./source-fetch";
+
+const channelId = "UCln9P4Qm3-EAY4aiEPmRwEA";
+const playlistId = "UUln9P4Qm3-EAY4aiEPmRwEA";
+const channelData = { items: [{ id: channelId, contentDetails: { relatedPlaylists: { uploads: playlistId } } }] };
+const upload = { snippet: { title: "Video", description: "Summary", videoOwnerChannelId: channelId, videoOwnerChannelTitle: "Ado", publishedAt: "2026-10-05T10:00:00Z", thumbnails: { high: { url: "https://i.ytimg.com/image.jpg" } } }, contentDetails: { videoId: "dQw4w9WgXcQ", videoPublishedAt: "2026-09-01T10:00:00Z" } };
+const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
+
+test("API normalization uses the video's real publication date, stable ID and owner", () => {
+  const rows = normalizeYouTubeUploads({ items: [upload, upload, { ...upload, contentDetails: { videoId: "aaaaaaaaaaa" } }, { ...upload, snippet: { ...upload.snippet, videoOwnerChannelId: "UCbbbbbbbbbbbbbbbbbbbbbb" } }] }, channelId);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].guid, "dQw4w9WgXcQ");
+  assert.equal(rows[0].publishedAt?.toISOString(), "2026-09-01T10:00:00.000Z");
+  assert.equal(rows[0].author, "Ado");
+  assert.equal(rows[0].imageUrl, "https://i.ytimg.com/image.jpg");
+});
+
+test("API sync uses two list requests initially and no detail/search/history requests", async () => {
+  const calls: URL[] = [];
+  const client = createYouTubeApiClient("test-key", async input => {
+    const url = new URL(String(input)); calls.push(url);
+    return json(url.pathname.endsWith("/channels") ? channelData : { items: [upload], nextPageToken: "do-not-follow" });
+  });
+  const rows = await client.sync(channelId);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(calls.map(url => url.pathname.split("/").at(-1)), ["channels", "playlistItems"]);
+  assert.equal(calls[1].searchParams.get("maxResults"), "50");
+  assert.equal(calls[1].searchParams.get("playlistId"), playlistId);
+  assert.equal(calls.some(url => url.searchParams.has("pageToken")), false);
+});
+
+test("repeated and concurrent syncs share requests, then refresh uploads without rediscovering the channel", async () => {
+  let now = 0;
+  let calls = 0;
+  const client = createYouTubeApiClient("test-key", async input => {
+    calls++;
+    await new Promise<void>(resolve => setImmediate(resolve));
+    return json(String(input).includes("/channels?") ? channelData : { items: [upload] });
+  }, () => now);
+  await Promise.all([client.sync(channelId), client.sync(channelId), client.sync(channelId)]);
+  assert.equal(calls, 2);
+  await client.sync(channelId);
+  assert.equal(calls, 2);
+  now += YOUTUBE_UPLOAD_CACHE_MS;
+  await client.sync(channelId);
+  assert.equal(calls, 3);
+});
+
+for (const [status, reason, code] of [[403, "quotaExceeded", "API_QUOTA"], [400, "keyInvalid", "API_CONFIGURATION"], [403, "SERVICE_DISABLED", "API_CONFIGURATION"]] as const) {
+  test(`${reason} activates a shared cooldown without retaining sensitive API messages`, async () => {
+    let now = 0;
+    let calls = 0;
+    const client = createYouTubeApiClient("secret-key", async () => {
+      calls++;
+      return json({ error: { message: "private secret-key response", errors: [{ reason }], details: [{ reason }] } }, status);
+    }, () => now);
+    await assert.rejects(client.sync(channelId), error => error instanceof SourceFetchError && error.code === code && !error.message.includes("secret-key"));
+    await assert.rejects(client.sync("UCbbbbbbbbbbbbbbbbbbbbbb"), YouTubeApiCooldownError);
+    assert.equal(calls, 1);
+    now += 15 * 60_000;
+    await assert.rejects(client.sync(channelId), SourceFetchError);
+    assert.equal(calls, 2);
+  });
+}
+
+test("HTTP 429 with a non-JSON body also stops further API attempts", async () => {
+  let calls = 0;
+  const client = createYouTubeApiClient("test-key", async () => { calls++; return new Response("Rate limited", { status: 429 }); });
+  await assert.rejects(client.sync(channelId), error => error instanceof SourceFetchError && error.code === "API_QUOTA" && error.status === 429);
+  await assert.rejects(client.sync("UCbbbbbbbbbbbbbbbbbbbbbb"), YouTubeApiCooldownError);
+  assert.equal(calls, 1);
+});
+
+test("one missing channel does not block other channels", async () => {
+  const client = createYouTubeApiClient("test-key", async input => {
+    const url = new URL(String(input));
+    if (url.searchParams.get("id") === "UCbbbbbbbbbbbbbbbbbbbbbb") return json({ items: [] });
+    return json(url.pathname.endsWith("/channels") ? channelData : { items: [upload] });
+  });
+  await assert.rejects(client.sync("UCbbbbbbbbbbbbbbbbbbbbbb"), error => error instanceof SourceFetchError && error.status === 404);
+  assert.equal((await client.sync(channelId)).length, 1);
+});
+
+test("timeouts and malformed API responses stay observable", async () => {
+  const timeout = createYouTubeApiClient("test-key", async () => { throw new DOMException("private", "TimeoutError"); });
+  await assert.rejects(timeout.sync(channelId), error => error instanceof SourceFetchError && error.code === "TIMEOUT");
+  const malformed = createYouTubeApiClient("test-key", async () => json({ private: "payload" }));
+  await assert.rejects(malformed.sync(channelId), error => error instanceof SourceFetchError && error.code === "INVALID_RESPONSE");
+});
+
+test("an API outage pauses retries briefly while allowing recovery after one minute", async () => {
+  let calls = 0; let now = 0;
+  const client = createYouTubeApiClient("test-key", async input => {
+    calls++;
+    if (now === 0) return json({ error: {} }, 503);
+    return json(String(input).includes("/channels?") ? channelData : { items: [upload] });
+  }, () => now);
+  await assert.rejects(client.sync(channelId), error => error instanceof SourceFetchError && error.status === 503);
+  await assert.rejects(client.sync("UCbbbbbbbbbbbbbbbbbbbbbb"), YouTubeApiCooldownError);
+  assert.equal(calls, 1);
+  now += 60_000;
+  assert.equal((await client.sync(channelId)).length, 1);
+  assert.equal(calls, 3);
+});
