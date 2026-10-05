@@ -1,10 +1,10 @@
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { items, itemStates, sources } from "@/db/schema";
 import { cookieName, readSession } from "@/lib/auth";
-import { buildItemCondition, itemRead, itemSaved, itemStateJoin } from "@/lib/item-query";
+import { buildItemCondition, itemDateOrder, itemRead, itemSaved, itemStateJoin } from "@/lib/item-query";
 import { parseLibraryQuery } from "@/lib/library";
 
 export async function GET(request: Request) {
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const [rows, [total], [counts]] = await Promise.all([
       db.select({ id: items.id, title: items.title, url: items.url, audioUrl: items.audioUrl, summary: items.summary, imageUrl: items.imageUrl, publishedAt: items.publishedAt, sourceName: sources.name, sourceId: sources.id, sourceKind: sources.kind, mediaType: items.mediaType, read: itemRead, saved: itemSaved, progressSeconds: sql<number>`coalesce(${itemStates.progressSeconds}, 0)::int`, durationSeconds: itemStates.durationSeconds, lastPlayedAt: itemStates.lastPlayedAt })
         .from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition)
-        .orderBy(sort === "oldest" ? asc(sql`coalesce(${items.publishedAt}, ${items.createdAt})`) : desc(sql`coalesce(${items.publishedAt}, ${items.createdAt})`), asc(items.id)).limit(36).offset(offset),
+        .orderBy(itemDateOrder(sort), asc(items.id)).limit(36).offset(offset),
       db.select({ value: sql<number>`count(*)::int` }).from(items).innerJoin(sources, eq(items.sourceId, sources.id)).leftJoin(itemStates, stateJoin).where(condition),
       db.select({
         all: sql<number>`count(*)::int`,
