@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db } from "@/db";
-import { itemStates, items, sources } from "@/db/schema";
+import { items, sources } from "@/db/schema";
 import { youtubeProvider } from "./feed";
 import { rssProvider } from "./rss";
 import type { ContentType } from "./library";
@@ -43,6 +43,10 @@ export function shortSyncError(error: unknown) {
   return message.replace(/\s+/g, " ").trim().slice(0, 240) || "Actualisation impossible.";
 }
 
+export function isInitialSourceSync(lastSyncedAt: Date | null, requestedInitialImport?: boolean) {
+  return requestedInitialImport ?? lastSyncedAt === null;
+}
+
 export function initialImportStates(userId: string, itemIds: string[], initialImport: boolean) {
   return initialImport ? itemIds.map(itemId => ({ id: deterministicItemStateId(userId, itemId), userId, itemId, read: true })) : [];
 }
@@ -79,10 +83,15 @@ export function getSourceProvider(kind: string) {
   return providers[kind];
 }
 
-export async function syncSourceDetailed(source: SourceSyncInput, { initialImport = false, deadlineMs = Date.now() + SYNC_SOURCE_BUDGET_MS, cron }: { initialImport?: boolean; deadlineMs?: number; cron?: CronImportContext } = {}) {
+export async function syncSourceDetailed(source: SourceSyncInput, { initialImport: requestedInitialImport, deadlineMs = Date.now() + SYNC_SOURCE_BUDGET_MS, cron }: { initialImport?: boolean; deadlineMs?: number; cron?: CronImportContext } = {}) {
   if (!db) throw new Error("Database not connected");
   const database = db;
   checkSyncDeadline(deadlineMs);
+  const [storedSource] = await database.select({ userId: sources.userId, lastSyncedAt: sources.lastSyncedAt }).from(sources).where(eq(sources.id, source.id)).limit(1);
+  if (!storedSource) throw new Error("Source introuvable.");
+  // Until a successful sync is recorded, refresh/cron retries are still the
+  // source's baseline import. The SQL inserts missing read states atomically.
+  const initialImport = isInitialSourceSync(storedSource.lastSyncedAt, requestedInitialImport);
   const resolved = getSourceProvider(source.kind) || { contentType: "article" as const, async sync() { throw new Error("Ce type de source ne peut pas encore être actualisé."); } };
   const context: SourceSyncContext = { deadlineMs };
   const provider: SourceProvider = {
@@ -104,12 +113,9 @@ export async function syncSourceDetailed(source: SourceSyncInput, { initialImpor
     provider,
     async normalized => {
       if (!normalized.length) return insertedSyncResult([]);
-      const changed = await database.execute<{ id: string; inserted: boolean }>(itemImportStatement(source.id, normalized, cron));
+      const changed = await database.execute<{ id: string; inserted: boolean }>(itemImportStatement(source.id, normalized, cron, { initialImport }));
       if (cron && !changed.rows.length) throw new SourceSyncDeferredError();
       const result = insertedSyncResult(changed.rows);
-      if (initialImport && !source.userId) throw new Error("Initial source import requires an owner.");
-      const states = initialImportStates(source.userId || "", result.insertedItemIds, initialImport);
-      if (states.length) await database.insert(itemStates).values(states);
       return result;
     },
     async () => { await database.update(sources).set({ lastSyncedAt: new Date(), lastSyncError: null }).where(eq(sources.id, source.id)); },

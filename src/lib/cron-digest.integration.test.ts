@@ -234,3 +234,36 @@ test("full RSS content persists and refreshes without changing read/saved state 
   const rows = await database.query<{ content_html: string }>("select content_html from items where guid = 'reader'");
   assert.equal(rows.rows[0].content_html, "<h2>Updated article</h2>");
 });
+
+test("initial RSS import creates read states atomically using the existing deterministic IDs", async () => {
+  const item = makeItem("baseline", "article");
+  const rows = await query<{ id: string; inserted: boolean }>(itemImportStatement(sourceB, [item], undefined, { initialImport: true }));
+  const state = (await database.query<{ id: string; read: boolean; saved: boolean }>("select id, read, saved from item_states where item_id = $1", [rows[0].id])).rows[0];
+  const { deterministicItemStateId } = await import("./item-state");
+  assert.equal(state.id, deterministicItemStateId(userA, rows[0].id)); assert.equal(state.read, true); assert.equal(state.saved, false);
+});
+
+test("baseline retry repairs missing read states after an earlier partial import", async () => {
+  const item = makeItem("partial-baseline", "article");
+  const rows = await query<{ id: string; inserted: boolean }>(itemImportStatement(sourceB, [item]));
+  assert.equal(rows[0].inserted, true);
+  const retry = await query<{ id: string; inserted: boolean }>(itemImportStatement(sourceB, [item], undefined, { initialImport: true }));
+  assert.equal(retry[0].inserted, false);
+  const state = (await database.query<{ read: boolean }>("select read from item_states where item_id = $1", [rows[0].id])).rows[0];
+  assert.equal(state.read, true);
+});
+
+test("baseline retry preserves an explicit unread/saved/progress state", async () => {
+  const item = makeItem("manual-state", "article");
+  const rows = await query<{ id: string; inserted: boolean }>(itemImportStatement(sourceB, [item], undefined, { initialImport: true }));
+  await database.query("update item_states set read=false,saved=true,progress_seconds=42 where item_id=$1", [rows[0].id]);
+  await query(itemImportStatement(sourceB, [item], undefined, { initialImport: true }));
+  assert.deepEqual((await database.query("select read,saved,progress_seconds from item_states where item_id=$1", [rows[0].id])).rows[0], { read: false, saved: true, progress_seconds: 42 });
+});
+
+test("later RSS imports stay unread while initial podcast imports are read", async () => {
+  const later = await query<{ id: string; inserted: boolean }>(itemImportStatement(sourceB, [makeItem("later", "article")]));
+  const podcast = await query<{ id: string; inserted: boolean }>(itemImportStatement(sourceC, [makeItem("first-podcast", "podcast")], undefined, { initialImport: true }));
+  const rows = (await database.query<{ item_id: string; read: boolean }>("select item_id, read from item_states")).rows;
+  assert.ok(!rows.some(row => row.item_id === later[0].id)); assert.equal(rows.find(row => row.item_id === podcast[0].id)?.read, true);
+});
