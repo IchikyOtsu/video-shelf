@@ -7,6 +7,7 @@ import type { ContentType } from "./library";
 import { deterministicItemStateId } from "./item-state";
 import { checkSyncDeadline, SourceSyncDeferredError, SYNC_SOURCE_BUDGET_MS } from "./sync-control";
 import { insertedSyncResult, itemImportStatement, type CronImportContext } from "./item-import";
+import { safeSourceSyncError } from "./source-database-error";
 import { logSourceSyncFailure } from "./source-fetch";
 
 export type SourceSyncInput = { id: string; userId?: string; kind: string; feedUrl: string };
@@ -64,10 +65,11 @@ export async function runSourceSync<T>(
     return imported;
   } catch (error) {
     if (error instanceof SourceSyncDeferredError) throw error;
-    logSourceSyncFailure(source, error, Math.round(performance.now() - started));
-    try { await recordFailure(shortSyncError(error)); }
+    const safeError = safeSourceSyncError(error);
+    logSourceSyncFailure(source, safeError, Math.round(performance.now() - started));
+    try { await recordFailure(shortSyncError(safeError)); }
     catch (recordError) { logSourceSyncFailure(source, recordError, Math.round(performance.now() - started)); }
-    throw error;
+    throw safeError;
   }
 }
 
