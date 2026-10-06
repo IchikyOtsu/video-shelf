@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { items, sources } from "@/db/schema";
 import { cookieName, readSession } from "@/lib/auth";
-import { youtubeApiClient } from "@/lib/youtube-api";
+import { fetchShortsTab } from "@/lib/youtube-shorts-page";
 import { youtubeFeedChannelId } from "@/lib/youtube-fallback";
 import { confirmedShortItemIds } from "@/lib/youtube-shorts";
 import { syncSourceBatch } from "@/lib/source-sync-batch";
@@ -21,7 +21,7 @@ export async function DELETE(request: Request) {
   try {
     if (request.headers.get("content-type")?.includes("application/json")) {
       const body = await request.json();
-      if (!body || typeof body.cursors !== "object" || !body.cursors || Array.isArray(body.cursors) || Object.entries(body.cursors).some(([id, token]) => id.length > 100 || typeof token !== "string" || token.length > 2048)) throw new Error();
+      if (!body || typeof body.cursors !== "object" || !body.cursors || Array.isArray(body.cursors) || Object.entries(body.cursors).some(([id, token]) => id.length > 100 || typeof token !== "string" || token.length > 16000)) throw new Error();
       cursors = body.cursors;
     }
   } catch { return NextResponse.json({ error: "Paramètres de nettoyage invalides." }, { status: 400 }); }
@@ -41,13 +41,13 @@ export async function DELETE(request: Request) {
         let lookupError: unknown;
         try {
           const channel = youtubeFeedChannelId(source.feedUrl);
-          if (!channel || !process.env.YOUTUBE_API_KEY) throw new SourceFetchError("API_CONFIGURATION", "www.googleapis.com");
-          const page = await youtubeApiClient(process.env.YOUTUBE_API_KEY).shorts(channel, cursors[source.id]);
+          if (!channel) throw new SourceFetchError("INVALID_RESPONSE", "www.youtube.com");
+          const page = await fetchShortsTab(channel, cursors[source.id]);
           ids = page.ids;
           if (page.nextPageToken) nextCursors[source.id] = page.nextPageToken;
         } catch (error) { lookupError = error; nextCursors[source.id] = cursors[source.id] || ""; }
         const targets = confirmedShortItemIds(rows, ids);
-        // Explicit /shorts URLs can also be removed when the API is unavailable.
+        // Explicit /shorts URLs can also be removed when the tab is unavailable.
         if (targets.length) {
           const deleted = await database.delete(items).where(and(eq(items.sourceId, source.id), inArray(items.id, targets))).returning({ id: items.id });
           removed += deleted.length;
