@@ -20,3 +20,7 @@ test("cleanup matches confirmed Shorts imported as watch URLs while preserving o
   assert.deepEqual(confirmedShortItemIds(rows, ["aaaaaaaaaaa"]), ["watch-short", "mobile-short", "explicit-short"]);
   assert.deepEqual(confirmedShortItemIds(rows, []), ["explicit-short"]);
 });
+
+test("cleanup recognizes the reported Short even with a mobile watch URL", () => {
+  assert.deepEqual(confirmedShortItemIds([{ id:"short",url:"https://m.youtube.com/watch?v=LFIibTvPW6I" },{ id:"normal",url:"https://www.youtube.com/watch?v=dQw4w9WgXcQ" }],["LFIibTvPW6I"]),["short"]);
+});

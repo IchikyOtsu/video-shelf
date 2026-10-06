@@ -25,6 +25,16 @@ export function youtubeFeedChannelId(feedUrl: string): string | null {
   } catch { return null; }
 }
 
+function shortRenderer(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const node = value as Node;
+  if (node.reelWatchEndpoint || node.reelItemRenderer || node.shortsLockupViewModel || node.iconType === "SHORTS" || node.imageName === "SHORTS" || node.style === "SHORTS") return true;
+  if (typeof node.url === "string") {
+    try { const url = new URL(node.url,"https://www.youtube.com"); if (["youtube.com","www.youtube.com","m.youtube.com"].includes(url.hostname) && url.pathname.startsWith("/shorts/")) return true; } catch { /* Other renderer URLs aren't navigation evidence. */ }
+  }
+  return Object.values(node).some(shortRenderer);
+}
+
 export function parseYouTubeVideosPage(page: string, channelId: string): NormalizedItem[] {
   const json = page.match(/(?:var ytInitialData\s*=|window\["ytInitialData"\]\s*=)\s*({[\s\S]*?});\s*<\/script>/)?.[1];
   if (!json) throw new Error("La page des vidéos YouTube est inaccessible.");
@@ -34,11 +44,14 @@ export function parseYouTubeVideosPage(page: string, channelId: string): Normali
   const tabs = list(object(object(root.contents).twoColumnBrowseResultsRenderer).tabs).map(tab => object(object(tab).tabRenderer));
   const selected = tabs.find(tab => tab.selected === true);
   if (!selected || !object(selected.content).richGridRenderer) throw new Error("Impossible de lire la liste des vidéos YouTube.");
+  const tabUrl = object(object(object(selected.endpoint).commandMetadata).webCommandMetadata).url;
+  if (typeof tabUrl === "string" && !new URL(tabUrl,"https://www.youtube.com").pathname.replace(/\/$/, "").endsWith("/videos")) throw new Error("La page YouTube ne montre pas l’onglet des vidéos.");
   const items: NormalizedItem[] = [];
   const seen = new Set<string>();
   for (const entry of list(object(object(selected.content).richGridRenderer).contents)) {
     // Only the selected tab's grid: no recommendations, Shorts shelves or playlists.
     const content = object(object(object(entry).richItemRenderer).content);
+    if (shortRenderer(content)) continue;
     const video = object(content.videoRenderer);
     const lockup = object(content.lockupViewModel);
     if (!video.videoId && lockup.contentType !== "LOCKUP_CONTENT_TYPE_VIDEO") continue;
@@ -59,16 +72,16 @@ export function parseYouTubeVideosPage(page: string, channelId: string): Normali
   return items;
 }
 
-export async function fetchYouTubeFeedWithFallback(feedUrl: string): Promise<{ xml: string } | { items: NormalizedItem[] }> {
+export async function fetchYouTubeFeedWithFallback(feedUrl: string): Promise<{ xml: string; allowedVideoIds?: string[] } | { items: NormalizedItem[] }> {
   const channelId = youtubeFeedChannelId(feedUrl);
-  // Never fall back to the mixed uploads feed: /watch URLs can also be Shorts.
   const rssUrl = channelId ? `https://www.youtube.com/feeds/videos.xml?playlist_id=${youtubeFormatPlaylist(channelId, "videos")}` : feedUrl;
-  try {
-    const response = await fetchSourceText(rssUrl, { "user-agent": "Shelf/1.0" });
-    return { xml: response.text };
-  } catch (error) {
-    if (!(error instanceof SourceFetchError) || error.status !== 404 || !channelId) throw error;
-    const response = await fetchSourceText(`https://www.youtube.com/channel/${channelId}/videos`, { "user-agent": "Mozilla/5.0", "accept-language": "en-US,en;q=0.9", cookie: "SOCS=CAI" });
-    return { items: parseYouTubeVideosPage(response.text, channelId) };
-  }
+  let xml: string | null = null;
+  try { xml = (await fetchSourceText(rssUrl, { "user-agent": "Shelf/1.0" })).text; }
+  catch (error) { if (!(error instanceof SourceFetchError) || error.status !== 404 || !channelId) throw error; }
+  if (!channelId) return { xml:xml! };
+  // RSS /watch links do not identify the format. Verify against the public
+  // Videos tab once per cached channel backup, never one request per item.
+  const response = await fetchSourceText(`https://www.youtube.com/channel/${channelId}/videos`, { "user-agent": "Mozilla/5.0", "accept-language": "en-US,en;q=0.9", cookie: "SOCS=CAI" });
+  const items = parseYouTubeVideosPage(response.text, channelId);
+  return xml !== null ? { xml, allowedVideoIds:items.map(item => item.guid) } : { items };
 }
