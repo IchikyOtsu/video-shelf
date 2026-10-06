@@ -262,7 +262,7 @@ export default function Home() {
       const result = await request("/api/items/shorts", { method: "DELETE", timeoutMs: 310_000, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cursors: shortCursors }) });
       setShortCursors(result.cursors || {});
       setNotice((result.removed ? result.removed + " Short(s) retiré(s)." : "Aucun Short retiré dans ce lot.") + (Object.keys(result.cursors || {}).length ? " Clique sur Continuer le nettoyage pour examiner la suite ou réessayer les sources en échec." : " Nettoyage terminé."));
-      if (result.failed) setError(result.failed + " source(s) non vérifiée(s). Réessaie ; la clé API YouTube doit être disponible.");
+      if (result.failed) setError(result.failed + " source(s) non vérifiée(s). Réessaie ; YouTube peut bloquer temporairement la lecture de son onglet Shorts.");
       closePlayer(); setSelected(new Set()); setFeedRevision(value => value + 1);
     } catch (error) { setError((error as Error).message); }
     finally { setCleaningShorts(false); }
