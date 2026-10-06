@@ -54,7 +54,7 @@ export const youtubeProvider: SourceProvider = {
     const channelId = youtubeFeedChannelId(source.feedUrl);
     if (apiKey && channelId) {
       const started = performance.now();
-      try { return await youtubeApiClient(apiKey).sync(channelId, context); }
+      try { const client = youtubeApiClient(apiKey); const rows = await client.sync(channelId, context); return await client.withoutShorts(channelId, rows, context); }
       catch (error) {
         if (error instanceof SourceSyncDeferredError) throw error;
         checkSyncDeadline(context.deadlineMs);
@@ -70,6 +70,6 @@ export const youtubeProvider: SourceProvider = {
     checkSyncDeadline(context.deadlineMs, Date.now() + 25_000);
     const response = await cachedBackup(source.feedUrl, apiKey ? "api" : "no-api");
     checkSyncDeadline(context.deadlineMs);
-    return "xml" in response ? parseYouTubeFeed(response.xml) : response.items;
+    return "xml" in response ? parseYouTubeFeed(response.xml).filter(item => !response.allowedVideoIds || response.allowedVideoIds.includes(item.guid)) : response.items;
   },
 };

@@ -49,11 +49,11 @@ test("consent pages, other channel owners and unrecognized markup remain failure
   assert.throws(() => parseYouTubeVideosPage(page([]), channelId), /Aucune vidéo/);
 });
 
-test("RSS remains the primary fetch with no second request on success", async t => {
+test("successful playlist RSS is verified once against the Videos tab", async t => {
   const calls: string[] = [];
-  t.mock.method(globalThis, "fetch", async (url: string) => { calls.push(url); return new Response("<feed/>"); });
-  assert.deepEqual(await fetchYouTubeFeedWithFallback(feedUrl), { xml: "<feed/>" });
-  assert.deepEqual(calls, [videosFeedUrl]);
+  t.mock.method(globalThis, "fetch", async (url: string) => { calls.push(url); return new Response(url === videosFeedUrl ? "<feed/>" : page([video])); });
+  assert.deepEqual(await fetchYouTubeFeedWithFallback(feedUrl), { xml: "<feed/>", allowedVideoIds:["dQw4w9WgXcQ"] });
+  assert.deepEqual(calls, [videosFeedUrl,`https://www.youtube.com/channel/${channelId}/videos`]);
 });
 
 test("a YouTube RSS 404 falls back to the same channel's public video page", async t => {
@@ -85,4 +85,10 @@ test("the fallback HTTP error remains observable", async t => {
 test("modern nested Shorts commands are excluded from the page backup", () => {
   const short = { lockupViewModel: { contentType: "LOCKUP_CONTENT_TYPE_VIDEO", contentId: "bbbbbbbbbbb", metadata: { lockupMetadataViewModel: { title: { content: "Short" } } }, rendererContext: { commandContext: { onTap: { innertubeCommand: { reelWatchEndpoint: { videoId: "bbbbbbbbbbb" } } } } } } };
   assert.deepEqual(parseYouTubeVideosPage(page([video, short]), channelId).map(item => item.guid), ["dQw4w9WgXcQ"]);
+});
+
+test("Shorts badges reject watch-link renderers without excluding an ordinary video merely titled Shorts", () => {
+  const short = { videoRenderer:{ videoId:"LFIibTvPW6I",title:{ simpleText:"Short" },navigationEndpoint:{ watchEndpoint:{ videoId:"LFIibTvPW6I" } },thumbnailOverlays:[{ thumbnailOverlayTimeStatusRenderer:{ style:"SHORTS" } }] } };
+  const normal = { videoRenderer:{ videoId:"dQw4w9WgXcQ",title:{ simpleText:"Shorts" },lengthText:{ simpleText:"0:30" } } };
+  assert.deepEqual(parseYouTubeVideosPage(page([short,normal]),channelId).map(item => item.guid),["dQw4w9WgXcQ"]);
 });

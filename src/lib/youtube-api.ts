@@ -122,6 +122,38 @@ export function createYouTubeApiClient(apiKey: string, fetcher: typeof fetch = f
       } while (pageToken);
       return rows;
     },
+    async withoutShorts(channelId: string, rows: NormalizedItem[], options: { knownGuids?: (ids: string[]) => Promise<ReadonlySet<string>>; deadlineMs?: number } = {}) {
+      if (!youtubeChannelIdPattern.test(channelId)) throw new Error("Identifiant de chaîne YouTube invalide.");
+      checkSyncDeadline(options.deadlineMs, now());
+      const known = options.knownGuids ? await options.knownGuids(rows.map(item => item.guid)) : new Set<string>();
+      const candidates = rows.filter(item => !known.has(item.guid));
+      // Metadata-only runs have nothing new to classify. Existing Shorts are
+      // removed through the explicit ownership-checked cleanup operation.
+      if (!candidates.length) return rows;
+      const dates = candidates.map(item => item.publishedAt?.getTime()).filter((date): date is number => date !== undefined && Number.isFinite(date));
+      const oldest = dates.length === candidates.length ? Math.min(...dates) : null;
+      const shorts = new Set<string>(); const visited = new Set<string>();
+      let pageToken: string | undefined;
+      do {
+        checkSyncDeadline(options.deadlineMs, now());
+        let data: Json;
+        try { data = await get("playlistItems", { part:"contentDetails", playlistId:youtubeFormatPlaylist(channelId,"shorts"), maxResults:"50", fields:"nextPageToken,items(contentDetails(videoId,videoPublishedAt))", ...(pageToken ? { pageToken } : {}) },YOUTUBE_UPLOAD_CACHE_MS); }
+        catch (error) { if (error instanceof SourceFetchError && error.status === 404) break; throw error; }
+        checkSyncDeadline(options.deadlineMs, now());
+        const page = array(data.items).map(item => object(object(item).contentDetails));
+        if (page.some(item => typeof item.videoId !== "string" || !/^[A-Za-z0-9_-]{11}$/.test(item.videoId))) throw new SourceFetchError("INVALID_RESPONSE", "www.googleapis.com");
+        const pageDates = page.map(item => typeof item.videoPublishedAt === "string" ? Date.parse(item.videoPublishedAt) : NaN);
+        for (const item of page) if (typeof item.videoId === "string" && /^[A-Za-z0-9_-]{11}$/.test(item.videoId)) shorts.add(item.videoId);
+        if (candidates.every(item => shorts.has(item.guid))) break;
+        // Continue past 50 Shorts only while their publication window can
+        // overlap new candidates. Missing dates cannot justify stopping early.
+        if (oldest !== null && pageDates.length && pageDates.every(Number.isFinite) && Math.max(...pageDates) < oldest) break;
+        pageToken = typeof data.nextPageToken === "string" && data.nextPageToken ? data.nextPageToken : undefined;
+        if (pageToken && visited.has(pageToken)) throw new SourceFetchError("INVALID_RESPONSE","www.googleapis.com");
+        if (pageToken) visited.add(pageToken);
+      } while (pageToken);
+      return rows.filter(item => !shorts.has(item.guid));
+    },
     async shorts(channelId: string, pageToken?: string): Promise<{ ids: string[]; nextPageToken?: string }> {
       try {
         const data = await get("playlistItems", { part: "contentDetails", playlistId: youtubeFormatPlaylist(channelId, "shorts"), maxResults: "50", fields: "nextPageToken,items(contentDetails/videoId)", ...(pageToken ? { pageToken } : {}) }, YOUTUBE_UPLOAD_CACHE_MS);

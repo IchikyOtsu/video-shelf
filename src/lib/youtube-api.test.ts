@@ -174,3 +174,34 @@ test("catch-up respects its deadline before starting another page", async () => 
   await assert.rejects(client.sync(channelId, { knownGuids: async () => new Set(), deadlineMs: 10 }), /reportée/);
   assert.equal(calls, 1);
 });
+
+test("Shorts with mobile watch URLs are excluded by playlist membership, while short ordinary videos survive", async () => {
+  const calls:URL[] = [];
+  const client = createYouTubeApiClient("test-key",async input => {
+    const url = new URL(String(input)); calls.push(url);
+    return json({ items:[{ contentDetails:{ videoId:"LFIibTvPW6I",videoPublishedAt:"2026-10-06T10:00:00Z" } }] });
+  });
+  const rows = [
+    { guid:"LFIibTvPW6I",title:"Short",url:"https://m.youtube.com/watch?v=LFIibTvPW6I",mediaType:"video",publishedAt:new Date("2026-10-06T10:00:00Z") },
+    { guid:"dQw4w9WgXcQ",title:"Short ordinary video",url:"https://www.youtube.com/watch?v=dQw4w9WgXcQ",mediaType:"video",duration:"0:30",publishedAt:new Date("2026-10-06T09:00:00Z") },
+  ];
+  assert.deepEqual((await client.withoutShorts(channelId,rows)).map(item => item.guid),["dQw4w9WgXcQ"]);
+  await client.withoutShorts(channelId,rows);
+  assert.equal(calls.length,1); assert.equal(calls[0].searchParams.get("playlistId"),"UUSH"+channelId.slice(2)); assert.equal(calls[0].pathname,"/youtube/v3/playlistItems");
+});
+test("Shorts verification follows additional pages until the new candidate window is covered", async () => {
+  const calls:URL[] = [];
+  const client = createYouTubeApiClient("test-key",async input => {
+    const url = new URL(String(input)); calls.push(url);
+    return json(url.searchParams.has("pageToken") ? { items:[{ contentDetails:{ videoId:"LFIibTvPW6I",videoPublishedAt:"2026-10-05T10:00:00Z" } }] } : { items:Array.from({ length:50 },(_,id) => ({ contentDetails:{ videoId:String(id).padStart(11,"0"),videoPublishedAt:"2026-10-06T10:00:00Z" } })),nextPageToken:"older" });
+  });
+  const rows = [{ guid:"LFIibTvPW6I",title:"Short",url:"https://www.youtube.com/watch?v=LFIibTvPW6I",mediaType:"video",publishedAt:new Date("2026-10-05T10:00:00Z") }];
+  assert.deepEqual(await client.withoutShorts(channelId,rows),[]); assert.equal(calls.length,2);
+});
+test("metadata-only runs avoid extra Shorts requests, and failed verification never silently accepts candidates", async () => {
+  let calls = 0;
+  const client = createYouTubeApiClient("test-key",async () => { calls++; return json({},403); });
+  const rows = [{ guid:"LFIibTvPW6I",title:"Short",url:"https://www.youtube.com/watch?v=LFIibTvPW6I",mediaType:"video" }];
+  assert.deepEqual(await client.withoutShorts(channelId,rows,{ knownGuids:async ids => new Set(ids) }),rows); assert.equal(calls,0);
+  await assert.rejects(client.withoutShorts(channelId,rows),error => error instanceof SourceFetchError && error.status === 403);
+});
