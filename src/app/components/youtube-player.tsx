@@ -11,7 +11,7 @@ type YouTubePlayer = {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
 };
 type YouTubeNamespace = {
-  Player: new (element: HTMLElement, options: { host?: string; videoId: string; playerVars: Record<string, number>; events: { onReady(event: PlayerEvent): void; onStateChange(event: PlayerEvent): void; onError(): void } }) => YouTubePlayer;
+  Player: new (element: HTMLElement, options: { host?: string; videoId: string; playerVars: Record<string, number | string>; events: { onReady(event: PlayerEvent): void; onStateChange(event: PlayerEvent): void; onError(): void } }) => YouTubePlayer;
   PlayerState: { ENDED: number; PLAYING: number; PAUSED: number };
 };
 
@@ -127,9 +127,10 @@ export function YouTubePlayer({ itemId, videoId, initialProgress, initialDuratio
       if (cancelled || !mount.current) return;
       const instance = new YT.Player(mount.current, {
         host: "https://www.youtube-nocookie.com", videoId,
-        playerVars: { autoplay: 1, rel: 0, playsinline: 1 },
+        playerVars: { autoplay: 1, rel: 0, playsinline: 1, origin: window.location.origin },
         events: {
           onReady(event) {
+            if (cancelled) return;
             const playerDuration = event.target.getDuration();
             const knownDuration = playerDuration > 0 ? Math.floor(playerDuration) : initialDurationRef.current;
             const start = resumePosition(initialProgressRef.current, knownDuration);
@@ -139,16 +140,17 @@ export function YouTubePlayer({ itemId, videoId, initialProgress, initialDuratio
             event.target.playVideo();
           },
           onStateChange(event) {
+            if (cancelled) return;
             if (event.data === YT.PlayerState.PLAYING) startSampling(event.target);
             else if (event.data === YT.PlayerState.PAUSED) { stopSampling(); sample(event.target, true); }
             else if (event.data === YT.PlayerState.ENDED) { stopSampling(); sample(event.target, true, false, true); }
             else stopSampling();
           },
-          onError() { warningCallback.current("Cette vidéo ne peut pas être lue ici. Ouvre-la sur YouTube."); },
+          onError() { if (!cancelled) warningCallback.current("Cette vidéo ne peut pas être lue ici. Ouvre-la sur YouTube."); },
         },
       });
       player.current = instance;
-    }).catch(() => warningCallback.current("Le lecteur YouTube n’a pas pu être chargé."));
+    }).catch(() => { if (!cancelled) warningCallback.current("Le lecteur YouTube n’a pas pu être chargé."); });
     return () => {
       cancelled = true;
       window.removeEventListener("pagehide", flushOnExit);
